@@ -172,7 +172,6 @@ function App() {
 
         if (cancelled) return;
 
-```jsx
         if (!response.ok) {
           setArgusStatus({
             loading: false,
