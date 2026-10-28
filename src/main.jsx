@@ -149,13 +149,14 @@ function App() {
       });
 
       try {
-        const response = await fetch(
-          '/.netlify/functions/argus-list-campaigns',
-          {
-            method: 'GET',
-            headers: {
-  Authorization: `Bearer ${session.access_token}`,
-},
+```jsx
+const response = await fetch('/.netlify/functions/argus-list-campaigns', {
+  method: 'GET',
+  headers: {
+    Authorization: 'Bearer ' + session.access_token
+  }
+});
+```
           }
         );
 
