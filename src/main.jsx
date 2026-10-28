@@ -149,7 +149,6 @@ function App() {
       });
 
       try {
-```jsx
 const response = await fetch('/.netlify/functions/argus-list-campaigns', {
   method: 'GET',
   headers: {
