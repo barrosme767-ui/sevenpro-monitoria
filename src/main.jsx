@@ -162,6 +162,20 @@ const response = await fetch('/.netlify/functions/argus-list-campaigns', {
 
         let result;
 
+```jsx
+      try {
+        const response = await fetch(
+          '/.netlify/functions/argus-list-campaigns',
+          {
+            method: 'GET',
+            headers: {
+              Authorization: 'Bearer ' + session.access_token,
+            },
+          }
+        );
+
+        let result;
+
         try {
           result = await response.json();
         } catch {
@@ -184,6 +198,38 @@ const response = await fetch('/.netlify/functions/argus-list-campaigns', {
           setArgusCampaigns([]);
           return;
         }
+
+        const payload = result?.data ?? result;
+
+        const campaigns = Array.isArray(payload?.campanhas)
+          ? payload.campanhas
+          : Array.isArray(payload?.data?.campanhas)
+            ? payload.data.campanhas
+            : [];
+
+        setArgusCampaigns(campaigns);
+
+        setArgusStatus({
+          loading: false,
+          connected: true,
+          message: campaigns.length
+            ? `Conexão validada. ${campaigns.length} campanha(s) retornada(s).`
+            : 'O servidor respondeu, mas nenhuma campanha foi retornada.',
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        setArgusStatus({
+          loading: false,
+          connected: false,
+          message:
+            error?.message ||
+            'Não foi possível consultar o servidor do Argus.',
+        });
+
+        setArgusCampaigns([]);
+      }
+```
 
         const payload = result?.data ?? result;
         const campaigns = Array.isArray(payload?.campanhas)
