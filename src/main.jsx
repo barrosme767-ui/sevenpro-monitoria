@@ -154,8 +154,8 @@ function App() {
           {
             method: 'GET',
             headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
+  Authorization: `Bearer ${session.access_token}`,
+},
           }
         );
 
