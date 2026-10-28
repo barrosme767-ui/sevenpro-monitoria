@@ -172,6 +172,7 @@ function App() {
 
         if (cancelled) return;
 
+```jsx
         if (!response.ok) {
           setArgusStatus({
             loading: false,
@@ -184,6 +185,7 @@ function App() {
           setArgusCampaigns([]);
           return;
         }
+```
 
         const payload = result?.data ?? result;
 
