@@ -39,6 +39,10 @@ function App() {
 const [dataError, setDataError] = useState('');
 
 const [argusStatus, setArgusStatus] = useState({
+  const [argusCampaigns, setArgusCampaigns] = useState([]);
+const [argusRecordings, setArgusRecordings] = useState([]);
+const [recordingsLoading, setRecordingsLoading] = useState(false);
+const [recordingsError, setRecordingsError] = useState('');
   loading: false,
   connected: false,
   message: 'Conexão ainda não testada.'
