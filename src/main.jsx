@@ -36,7 +36,13 @@ function App() {
   const [selectedCall, setSelectedCall] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [realData, setRealData] = useState(null);
-  const [dataError, setDataError] = useState('');
+const [dataError, setDataError] = useState('');
+
+const [argusStatus, setArgusStatus] = useState({
+  loading: false,
+  connected: false,
+  message: 'Conexão ainda não testada.'
+});
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return; }
@@ -54,7 +60,84 @@ function App() {
       setRealData(data);
     })();
   }, [session]);
+useEffect(() => {
+  if (
+    !session ||
+    !realData ||
+    realData.role !== 'director' ||
+    !realData.active
+  ) {
+    return;
+  }
 
+  let cancelled = false;
+
+  async function checkArgus() {
+    setArgusStatus({
+      loading: true,
+      connected: false,
+      message: 'Testando conexão com o Argus...'
+    });
+
+    try {
+      const response = await fetch(
+        '/.netlify/functions/argus-list-campaigns',
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`
+          }
+        }
+      );
+
+      let result;
+
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error('O servidor retornou uma resposta inválida.');
+      }
+
+      if (cancelled) return;
+
+      if (!response.ok) {
+        setArgusStatus({
+          loading: false,
+          connected: false,
+          message:
+            result.error ||
+            `Falha na consulta ao Argus (HTTP ${response.status}).`
+        });
+
+        return;
+      }
+
+      setArgusStatus({
+        loading: false,
+        connected: true,
+        message:
+          'O servidor respondeu à consulta de campanhas do Argus.'
+      });
+    } catch (error) {
+      if (cancelled) return;
+
+      setArgusStatus({
+        loading: false,
+        connected: false,
+        message:
+          error.message ||
+          'Não foi possível consultar o servidor do Argus.'
+      });
+    }
+  }
+
+  checkArgus();
+
+  return () => {
+    cancelled = true;
+  };
+}, [session, realData]);
+  
   async function handleLogin(e) {
     e.preventDefault(); setLoginError('');
     if (!supabase) { setLoginError('O sistema ainda não foi configurado. Configure o Supabase e as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.'); return; }
@@ -92,7 +175,11 @@ function App() {
         {page === 'alerts' && <Alerts setSelectedCall={setSelectedCall}/>}
         {page === 'reports' && <Reports/>}
         {page === 'users' && (role === 'director' ? <UserManagement/> : <Restricted/>)}
-        {page === 'settings' && (role === 'director' ? <SettingsPage/> : <Restricted/>)}
+        {page === 'settings' && (
+  role === 'director'
+    ? <SettingsPage argusStatus={argusStatus} />
+    : <Restricted />
+)}
         <footer className="page-footer"><span>© 2026 SEVENPRO MONITORIA</span><span><ShieldCheck size={13}/> Dados protegidos • Acesso conforme permissões</span></footer>
       </section>
     </main>
@@ -113,8 +200,101 @@ function Operators() { return <><PageTitle eyebrow="DESEMPENHO INDIVIDUAL" title
 function Alerts({setSelectedCall}) { return <><PageTitle eyebrow="CENTRAL DE ATENÇÃO" title="Alertas de qualidade" description="Revise possíveis problemas identificados pela IA antes de tomar qualquer decisão."/><div className="notice info"><CircleAlert size={18}/><div><b>Alerta não é conclusão automática</b><p>As ocorrências são sugestões de revisão. A Diretoria ou a liderança autorizada deve ouvir o trecho e registrar a conclusão.</p></div></div><div className="alert-list-large">{sampleCalls.filter(c=>c.score<70).map(c=><div className="panel alert-large" key={c.id}><div className="alert-large-icon"><CircleAlert size={20}/></div><div className="alert-large-content"><div className="alert-large-title"><b>{c.compliance==='Revisar'?'Possível falha de conformidade':'Indicador vocal para revisão'}</b><span className="priority high">Prioridade alta</span></div><p>{c.operator} • {c.team} • {c.date}</p><div className="alert-evidence"><b>Motivo sugerido pela IA</b><span>Nota de qualidade {c.score}/100 e indicadores que precisam ser verificados por uma pessoa.</span></div><button className="text-button" onClick={()=>setSelectedCall(c)}>Revisar ligação <ArrowUpRight size={14}/></button></div></div>)}</div></> }
 function Reports() { return <><PageTitle eyebrow="INTELIGÊNCIA DE NEGÓCIO" title="Relatórios" description="Consolide resultados de qualidade por período, gerente, supervisor e operador."/><div className="metrics-grid"><Metric label="Nota média" value="84,7" delta="+3,2 pts" sub="vs. período anterior" icon={Activity} kind="green"/><Metric label="Conformidade" value="96,2%" delta="+1,4%" sub="das chamadas revisadas" icon={ShieldCheck} kind="purple"/><Metric label="Tempo médio" value="04:18" delta="-0:12" sub="por ligação analisada" icon={Clock3} kind="red"/><Metric label="Cobertura da IA" value="86,1%" delta="+8,4%" sub="das gravações disponíveis" icon={AudioLines} kind="amber"/></div><div className="panel report-placeholder"><div className="report-icon"><Activity size={23}/></div><h3>Relatórios gerenciais</h3><p>Os relatórios reais serão habilitados após a conexão com o banco de dados. Poderão ser filtrados por período, gerente, supervisor e operador.</p><button className="secondary-button" onClick={()=>alert('Configure a integração com o Argus para habilitar a exportação real.') }><Download size={16}/> Exportação indisponível na prévia</button></div></> }
 function UserManagement() { return <><PageTitle eyebrow="CONTROLE DE ACESSO" title="Gestão de usuários" description="Apenas a Diretoria poderá criar contas e definir a hierarquia de acesso."/><div className="notice info"><ShieldCheck size={18}/><div><b>Cadastro protegido</b><p>O cadastro público permanece desativado. A criação de usuários deve ocorrer por uma função administrativa autenticada no servidor.</p></div></div><div className="metrics-grid"><Metric label="Diretoria" value="1" delta="Acesso total" sub="conta inicial a configurar" icon={ShieldCheck} kind="red"/><Metric label="Gerentes" value="2" delta="Duas equipes" sub="vincular na configuração" icon={Users} kind="purple"/><Metric label="Supervisores" value="—" delta="A cadastrar" sub="por gerente" icon={Users} kind="green"/><Metric label="Contas bloqueadas" value="0" delta="—" sub="status a consultar no banco" icon={LockKeyhole} kind="amber"/></div><div className="panel hierarchy-panel"><div className="panel-heading"><div><h3>Hierarquia organizacional</h3><p>Modelo de permissões definido para a ME7</p></div></div><div className="hierarchy-tree"><div className="tree-node director-node"><ShieldCheck size={17}/><div><b>Diretoria</b><small>Visão global • gerencia usuários e permissões</small></div><span>1 nível</span></div><div className="tree-branches"><div className="tree-branch"><div className="tree-node manager-node"><Users size={17}/><div><b>Gerente 1</b><small>Equipes vinculadas pela Diretoria</small></div></div><div className="tree-child"><div className="tree-node supervisor-node"><Users size={15}/><div><b>Supervisor 1</b><small>Operadores da equipe</small></div></div><div className="tree-node supervisor-node"><Users size={15}/><div><b>Supervisor 2</b><small>Operadores da equipe</small></div></div></div></div><div className="tree-branch"><div className="tree-node manager-node"><Users size={17}/><div><b>Gerente 2</b><small>Equipes vinculadas pela Diretoria</small></div></div><div className="tree-child"><div className="tree-node supervisor-node"><Users size={15}/><div><b>Supervisor 3</b><small>Operadores da equipe</small></div></div><div className="tree-node supervisor-node"><Users size={15}/><div><b>Supervisor 4</b><small>Operadores da equipe</small></div></div></div></div></div></div></div></> }
-function SettingsPage() { return <><PageTitle eyebrow="ADMINISTRAÇÃO DO SISTEMA" title="Configurações" description="Configure integrações e critérios de monitoria em ambiente protegido."/><div className="settings-grid"><div className="panel setting-card"><div className="setting-icon"><Activity size={20}/></div><h3>Integração com Argus</h3><p>Configure o token no ambiente seguro do servidor para listar chamadas e buscar gravações.</p><span className="setup-status"><i/> Pendente de configuração</span></div><div className="panel setting-card"><div className="setting-icon"><AudioLines size={20}/></div><h3>Critérios da IA</h3><p>Defina os pesos de clareza, transparência, roteiro, cordialidade e indicadores vocais.</p><span className="setup-status"><i/> Critérios iniciais pendentes</span></div><div className="panel setting-card"><div className="setting-icon"><ShieldCheck size={20}/></div><h3>Segurança e auditoria</h3><p>Gerencie sessões, política de acesso, retenção e consulta de eventos administrativos.</p><span className="setup-status"><i/> Revisão de implantação necessária</span></div></div><div className="notice warning"><CircleAlert size={18}/><div><b>Não cole tokens nesta tela.</b><p>As chaves do Argus e do banco devem ser armazenadas como variáveis secretas no ambiente de hospedagem.</p></div></div></> }
-function Restricted() { return <div className="panel restricted"><div className="restricted-icon"><LockKeyhole size={25}/></div><h3>Acesso restrito</h3><p>Esta área é exclusiva da Diretoria. Se precisar de acesso, solicite autorização ao administrador do SEVENPRO.</p></div> }
+function SettingsPage({ argusStatus }) {
+  const statusText = argusStatus.loading
+    ? 'Testando conexão...'
+    : argusStatus.connected
+      ? 'Conexão validada'
+      : 'Conexão não validada';
+
+  const statusClass = argusStatus.loading
+    ? 'pending'
+    : argusStatus.connected
+      ? 'connected'
+      : 'error';
+
+  return (
+    <>
+      <PageTitle
+        eyebrow="ADMINISTRAÇÃO DO SISTEMA"
+        title="Configurações"
+        description="Configure integrações e critérios de monitoria em ambiente protegido."
+      />
+
+      <div className="settings-grid">
+        <div className="panel setting-card">
+          <div className="setting-icon">
+            <Activity size={20} />
+          </div>
+
+          <h3>Integração com Argus</h3>
+
+          <p>
+            Consulte o estado da integração com o servidor Argus.
+          </p>
+
+          <span className={`setup-status ${statusClass}`}>
+            <i />
+            {statusText}
+          </span>
+
+          <p className="integration-message" role="status">
+            {argusStatus.message}
+          </p>
+        </div>
+
+        <div className="panel setting-card">
+          <div className="setting-icon">
+            <AudioLines size={20} />
+          </div>
+
+          <h3>Critérios da IA</h3>
+
+          <p>
+            Defina os pesos de clareza, transparência, roteiro,
+            cordialidade e indicadores vocais.
+          </p>
+
+          <span className="setup-status">
+            <i />
+            Critérios iniciais pendentes
+          </span>
+        </div>
+
+        <div className="panel setting-card">
+          <div className="setting-icon">
+            <ShieldCheck size={20} />
+          </div>
+
+          <h3>Segurança e auditoria</h3>
+
+          <p>
+            Gerencie sessões, política de acesso, retenção e consulta
+            de eventos administrativos.
+          </p>
+
+          <span className="setup-status">
+            <i />
+            Revisão de implantação necessária
+          </span>
+        </div>
+      </div>
+
+      <div className="notice warning">
+        <CircleAlert size={18} />
+
+        <div>
+          <b>Não cole tokens nesta tela.</b>
+
+          <p>
+            As chaves do Argus e do banco devem ser armazenadas
+            como variáveis secretas no ambiente de hospedagem.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}function Restricted() { return <div className="panel restricted"><div className="restricted-icon"><LockKeyhole size={25}/></div><h3>Acesso restrito</h3><p>Esta área é exclusiva da Diretoria. Se precisar de acesso, solicite autorização ao administrador do SEVENPRO.</p></div> }
 function CallModal({call,close}) { return <div className="modal-backdrop" onClick={close}><div className="call-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><div className="section-eyebrow">DETALHES DA MONITORIA</div><h2>Ligação {call.id}</h2></div><button className="modal-close" onClick={close}>×</button></div><div className="modal-person"><span className="operator-avatar large-avatar">{call.initials}</span><div><b>{call.operator}</b><span>{call.team} • {call.date}</span></div><span className={`score-pill ${scoreClass(call.score)}`}>{call.score}<small>/100</small></span></div><div className="modal-audio"><div className="audio-icon"><FileAudio size={21}/></div><div className="audio-info"><b>Gravação da chamada</b><span>Áudio real disponível após configurar o Argus</span></div><button className="play-button" disabled title="Integração pendente"><Play size={16} fill="currentColor"/></button></div><div className="modal-metrics"><div><span>Nota geral</span><b className={scoreClass(call.score)}>{call.score}/100</b></div><div><span>Indicador vocal</span><b>{call.voice}</b></div><div><span>Conformidade</span><b>{call.compliance}</b></div><div><span>Duração</span><b>{call.duration}</b></div></div><div className="transcript-box"><div className="transcript-heading"><h3>Transcrição</h3><span className="pending-badge">Pendente de IA</span></div><p>A transcrição será gerada automaticamente após conectar o Argus e configurar o serviço de reconhecimento de fala. As notas demonstrativas desta tela não representam avaliação real.</p></div><div className="modal-footer"><span><ShieldCheck size={14}/> A revisão humana será registrada no histórico.</span><button className="primary-button" onClick={close}>Fechar detalhes</button></div></div></div> }
 
 createRoot(document.getElementById('root')).render(<App/>);
