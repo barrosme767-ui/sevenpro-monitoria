@@ -135,7 +135,8 @@ function App() {
         setArgusStatus({
           loading: false,
           connected: false,
-          message: 'A consulta está disponível somente para a Diretoria.',
+          message:
+            'A consulta está disponível somente para a Diretoria.',
         });
 
         setArgusCampaigns([]);
@@ -148,20 +149,6 @@ function App() {
         message: 'Testando a conexão com o Argus...',
       });
 
-      try {
-const response = await fetch('/.netlify/functions/argus-list-campaigns', {
-  method: 'GET',
-  headers: {
-    Authorization: 'Bearer ' + session.access_token
-  }
-});
-```
-          }
-        );
-
-        let result;
-
-```jsx
       try {
         const response = await fetch(
           '/.netlify/functions/argus-list-campaigns',
@@ -200,37 +187,6 @@ const response = await fetch('/.netlify/functions/argus-list-campaigns', {
 
         const payload = result?.data ?? result;
 
-        const campaigns = Array.isArray(payload?.campanhas)
-          ? payload.campanhas
-          : Array.isArray(payload?.data?.campanhas)
-            ? payload.data.campanhas
-            : [];
-
-        setArgusCampaigns(campaigns);
-
-        setArgusStatus({
-          loading: false,
-          connected: true,
-          message: campaigns.length
-            ? `Conexão validada. ${campaigns.length} campanha(s) retornada(s).`
-            : 'O servidor respondeu, mas nenhuma campanha foi retornada.',
-        });
-      } catch (error) {
-        if (cancelled) return;
-
-        setArgusStatus({
-          loading: false,
-          connected: false,
-          message:
-            error?.message ||
-            'Não foi possível consultar o servidor do Argus.',
-        });
-
-        setArgusCampaigns([]);
-      }
-```
-
-        const payload = result?.data ?? result;
         const campaigns = Array.isArray(payload?.campanhas)
           ? payload.campanhas
           : Array.isArray(payload?.data?.campanhas)
