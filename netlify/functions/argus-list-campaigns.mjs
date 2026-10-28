@@ -23,14 +23,7 @@ export async function handler(event) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const argusToken = process.env.ARGUS_TOKEN_SIGNATURE;
-const argusBaseUrl =
-  process.env.ARGUS_API_URL ||
-  'http://api.argus.app.br:24797/apiargus';
-  if (!supabaseUrl || !serviceKey || !argusToken) {
-    return json(503, {
-      error: 'Integração não configurada no servidor.'
-    });
-  }
+const argusBaseUrl = process.env.ARGUS_API_URL;
 
   try {
     const supabase = createClient(supabaseUrl, serviceKey, {
