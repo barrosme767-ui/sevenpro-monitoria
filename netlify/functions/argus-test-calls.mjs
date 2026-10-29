@@ -308,12 +308,13 @@ return json(200, {
   periodo: {
     inicial: payload.periodoInicial,
     final: payload.periodoFinal
-    contagemPorResultado: rankingResultados,
+
   },
   statusArgus: data.codStatus ?? null,
   mensagemArgus: data.descStatus ?? null,
-    fimDaTabela: data.endOfTable ?? null,
+  fimDaTabela: data.endOfTable ?? null,
   quantidadeInformadaArgus: data.qtdeRegistros ?? null,
+  contagemPorResultado: rankingResultados,
   idProximaPagina: data.idProxPagina ?? null,
   estrutura: {
     camposRaiz: Object.keys(data),
