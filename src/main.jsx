@@ -201,6 +201,7 @@ const alerts = useMemo(
  async function openCall(c){setSelected(c);setAudio('');const id=getCallId(c);const old=reviews.find(r=>r.argus_call_id===id&&Number(r.campaign_id)===Number(campaign));setReviewForm(old?{outcome:old.outcome,score:old.score??100,notes:old.notes||'',...(old.criteria||{})}:{outcome:'approved',score:100,notes:'',identity:true,clear:true,consent:true,noMisleading:true,respect:true,closure:true})}
  async function playAudio(c){setAudioBusy(true);setAudio('');try{const d=await api('/.netlify/functions/argus-download-recording',{idCampanha:campaign,idLigacao:getCallId(c),formato:'MP3'});const mime=(d.formato||'MP3').toUpperCase()==='WAV'?'audio/wav':'audio/mpeg';setAudio(`data:${mime};base64,${d.arquivoBase64}`)}catch(e){setError(e.message)}finally{setAudioBusy(false)}}
 
+
 async function saveReview() {
   if (!selected || !supabase || !session) return;
 
@@ -256,6 +257,7 @@ async function saveReview() {
     setReviewBusy(false);
   }
 }
+
  async function testArgus(){try{setArgusStatus('Testando…');const d=await api('/.netlify/functions/argus-list-campaigns');const list=d.data?.campanhas||[];setArgusStatus(`Conexão OK · ${list.length} campanha(s)`)}catch(e){setArgusStatus(e.message)}}
  if(!authReady)return <div className="loading-screen"><div className="brand-mark">S</div>Preparando ambiente seguro…</div>;
  if(!session)return <div className="login-page"><section className="login-left"><div className="login-brand"><div className="brand-mark">S</div><div><div className="brand-name">SEVENPRO</div><div className="brand-sub">MONITORIA INTELIGENTE</div></div></div><div className="login-pitch"><div className="eyebrow">PLATAFORMA CORPORATIVA</div><h1>Qualidade em cada <span>conversa.</span></h1><p>Central de ligações, avaliação de atendimento e acompanhamento de qualidade da ME7.</p></div><div className="login-left-footer">SEVENPRO • ME7 PROMOTORA</div></section><section className="login-right"><div className="login-form-wrap"><div className="form-heading"><div className="form-kicker">ACESSO CORPORATIVO</div><h2>Acesse sua conta</h2><p>Entre com seu usuário cadastrado no Supabase.</p></div>{(!supabase||loginError)&&<div className="notice warning">{loginError||'Configure as variáveis públicas do Supabase para habilitar o login.'}</div>}<form onSubmit={login}><label>E-mail</label><div className="input-wrap"><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required placeholder="seu.email@empresa.com"/></div><label>Senha</label><div className="input-wrap"><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Sua senha"/></div><button className="primary-button login-submit" disabled={busy||!supabase}>{busy?'Entrando…':'Entrar na plataforma'} <ChevronRight size={16}/></button></form><p className="login-legal">Acesso conforme perfil e permissões configuradas pela Diretoria.</p></div></section></div>;
