@@ -124,58 +124,66 @@ export async function handler(event) {
       periodoFinal: fim.toISOString()
     };
 
- const baseUrl = String(ARGUS_API_URL).replace(/\/+$/, '');
+const baseUrl = String(ARGUS_API_URL).replace(/\/+$/, '');
 
-    const controller = new AbortController();
-let upstream;
+const controller = new AbortController();
 
 const timeout = setTimeout(() => {
   controller.abort();
 }, 25000);
 
+let upstream;
+let responseText;
+
 try {
-  upstream = await fetch(baseUrl + '/cmd/ligacoesdetalhadas', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'Token-Signature': ARGUS_TOKEN_SIGNATURE
-    },
-    body: JSON.stringify(payload),
-    signal: controller.signal
-  });
+  upstream = await fetch(
+    baseUrl + '/report/ligacoesdetalhadas',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Token-Signature': ARGUS_TOKEN_SIGNATURE
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    }
+  );
+
+  responseText = await upstream.text();
 } finally {
   clearTimeout(timeout);
 }
-    const responseText = await upstream.text();
-
 
 if (!upstream.ok) {
-  const detalhe = await upstream.text();
-
   console.error(
     'Teste de ligações Argus:',
     upstream.status,
-    detalhe
+    responseText.slice(0, 1500)
   );
 
   return json(502, {
     error: 'O Argus recusou a consulta.',
     upstreamStatus: upstream.status,
-    detalhe: detalhe.slice(0, 1500)
+    detalhe: responseText.slice(0, 1500)
   });
 }
 
+let data;
 
+try {
+  data = JSON.parse(responseText);
+} catch {
+  console.error(
+    'Argus retornou resposta que não é JSON:',
+    responseText.slice(0, 1000)
+  );
 
-    let data;
+  return json(502, {
+    error: 'O Argus não retornou JSON válido.',
+    detalhe: responseText.slice(0, 1000)
+  });
+}
 
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      return json(502, {
-        error: 'O Argus não retornou JSON válido.'
-      });
-    }
 
     if (
       data?.codStatus !== undefined &&
