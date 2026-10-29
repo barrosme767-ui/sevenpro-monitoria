@@ -1,4 +1,4 @@
-```javascript
+
 import { createClient } from '@supabase/supabase-js';
 
 const json = (statusCode, body) => ({
@@ -185,36 +185,39 @@ try {
 
     const colecoes = {};
 
-    function inspecionar(valor, caminho = 'data', nivel = 0) {
-      if (nivel > 4 || valor == null) return;
+function inspecionar(valor, caminho = 'data', nivel = 0) {
+  if (nivel > 4 || valor == null) {
+    return;
+  }
 
-      if (Array.isArray(valor)) {
-        colecoes[caminho] = {
-          tipo: 'array',
-          quantidade: valor.length,
-          camposPrimeiroRegistro:
-            valor.length > 0 &&
-            typeof valor[0] === 'object' &&
-            valor[0] !== null
-              ? Object.keys(valor[0])
-              : []
-        };
+  if (Array.isArray(valor)) {
+    colecoes[caminho] = {
+      tipo: 'array',
+      quantidade: valor.length,
+      camposPrimeiroRegistro:
+        valor.length > 0 &&
+        typeof valor[0] === 'object' &&
+        valor[0] !== null
+          ? Object.keys(valor[0])
+          : []
+    };
 
-        return;
-      }
+    return;
+  }
 
-      if (typeof valor === 'object') {
-        for (const [chave, item] of Object.entries(valor)) {
-          if (item && typeof item === 'object') {
-            inspecionar(
-              item,
-              `${caminho}.${chave}`,
-              nivel + 1
-            );
-          }
-        }
+  if (typeof valor === 'object') {
+    for (const [chave, item] of Object.entries(valor)) {
+      if (item && typeof item === 'object') {
+        inspecionar(
+          item,
+          caminho + '.' + chave,
+          nivel + 1
+        );
       }
     }
+  }
+}
+
 
     inspecionar(data);
 
@@ -253,4 +256,3 @@ try {
     });
   }
 }
-```
