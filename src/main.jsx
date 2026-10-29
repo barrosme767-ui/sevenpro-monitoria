@@ -2,6 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase } from './supabase';
 
+import {
+  ChevronDown,
+  ShieldCheck,
+  Settings,
+  CircleHelp,
+  Menu,
+  Bell,
+  LogOut,
+  CircleAlert,
+  LockKeyhole
+} from 'lucide-react';
+
 const sampleCalls = [];
 
 function App() {
