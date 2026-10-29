@@ -148,6 +148,7 @@ try {
 }
     const responseText = await upstream.text();
 
+
 if (!upstream.ok) {
   const detalhe = await upstream.text();
 
@@ -163,6 +164,7 @@ if (!upstream.ok) {
     detalhe: detalhe.slice(0, 1500)
   });
 }
+
 
 
     let data;
