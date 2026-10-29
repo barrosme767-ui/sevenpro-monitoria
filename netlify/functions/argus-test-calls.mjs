@@ -286,13 +286,29 @@ const ligacoes =
   data?.ligacoesDetalhadas ??
   data?.data?.ligacoesDetalhadas ??
   [];
+const resultados = {};
 
+for (const ligacao of ligacoes) {
+  const resultado =
+    String(ligacao.resultadoLigacao || 'SEM RESULTADO').trim();
+
+  resultados[resultado] = (resultados[resultado] || 0) + 1;
+}
+
+const rankingResultados = Object.entries(resultados)
+  .map(([resultado, quantidade]) => ({
+    resultado,
+    quantidade
+  }))
+  .sort((a, b) => b.quantidade - a.quantidade);
+    
 return json(200, {
   sucesso: true,
   campanha: idCampanha,
   periodo: {
     inicial: payload.periodoInicial,
     final: payload.periodoFinal
+    contagemPorResultado: rankingResultados,
   },
   statusArgus: data.codStatus ?? null,
   mensagemArgus: data.descStatus ?? null,
