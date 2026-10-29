@@ -236,24 +236,37 @@ function inspecionar(valor, caminho = 'data', nivel = 0) {
 
     inspecionar(data);
 
-    return json(200, {
-      sucesso: true,
-      campanha: idCampanha,
-      periodo: {
-        inicial: payload.periodoInicial,
-        final: payload.periodoFinal
-      },
-      statusArgus: data.codStatus ?? null,
-      mensagemArgus: data.descStatus ?? null,
-      estrutura: {
-        camposRaiz:
-          data && typeof data === 'object'
-            ? Object.keys(data)
-            : [],
-        colecoes
-      },
-      respostaArgus: data
-    });
+const ligacoes =
+  data?.ligacoesDetalhadas ??
+  data?.data?.ligacoesDetalhadas ??
+  [];
+
+return json(200, {
+  sucesso: true,
+  campanha: idCampanha,
+  periodo: {
+    inicial: payload.periodoInicial,
+    final: payload.periodoFinal
+  },
+  statusArgus: data.codStatus ?? null,
+  mensagemArgus: data.descStatus ?? null,
+  estrutura: {
+    camposRaiz: Object.keys(data),
+    colecoes
+  },
+  quantidadeLigacoes: Array.isArray(ligacoes)
+    ? ligacoes.length
+    : null,
+  camposPrimeiraLigacao:
+    Array.isArray(ligacoes) && ligacoes.length > 0
+      ? Object.keys(ligacoes[0])
+      : [],
+  primeiraLigacao:
+    Array.isArray(ligacoes) && ligacoes.length > 0
+      ? ligacoes[0]
+      : null
+});
+
   } catch (error) {
     console.error(
       'argus-test-calls error:',
