@@ -137,7 +137,7 @@ export async function handler(event) {
     );
 
     let upstream;
-
+  
     try {
       upstream = await fetch(
         `${baseUrl}/cmd/ligacoesdetalhadas`,
@@ -154,7 +154,6 @@ export async function handler(event) {
     } finally {
       clearTimeout(timeout);
     }
-
     const responseText = await upstream.text();
 
     if (!upstream.ok) {
