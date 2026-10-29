@@ -65,116 +65,58 @@ function App() {
   }, []);
 
   // Carrega o perfil autorizado do usuário conectado.
-   // Verifica a conexão com o Argus para usuários da Diretoria.
   useEffect(() => {
     let cancelled = false;
 
-    async function checkArgus() {
-      if (
-        !session ||
-        !realData ||
-        realData.role !== 'director' ||
-        !realData.active
-      ) {
-        setArgusStatus({
-          loading: false,
-          connected: false,
-          message:
-            'A consulta está disponível somente para a Diretoria.',
-        });
-        setArgusCampaigns([]);
-        return;
-      }
+    async function loadProfile() {
+      setRealData(null);
+      setDataError('');
 
-      setArgusStatus({
-        loading: true,
-        connected: false,
-        message: 'Testando a conexão com o Argus...',
-      });
+      if (!session || !supabase) return;
 
       try {
-        const response = await fetch(
-          '/.netlify/functions/argus-list-campaigns',
-          {
-            method: 'GET',
-            headers: {
-              Authorization: 'Bearer ' + session.access_token,
-            },
-          }
-        );
-
-        let result;
-
-        try {
-          result = await response.json();
-        } catch {
-          throw new Error(
-            'O servidor retornou uma resposta inválida.'
-          );
-        }
+        const { data, error } = await supabase
+          .from('profiles')
+          .select(
+            'display_name, role, manager_id, supervisor_id, active'
+          )
+          .eq('id', session.user.id)
+          .single();
 
         if (cancelled) return;
 
-        if (!response.ok) {
-          const errorMessage =
-            result && result.error
-              ? result.error
-              : 'Falha na consulta ao Argus. Código HTTP: ' +
-                response.status;
-
-          setArgusStatus({
-            loading: false,
-            connected: false,
-            message: errorMessage,
-          });
-
-          setArgusCampaigns([]);
+        if (error || !data) {
+          setDataError(
+            'Não foi possível carregar seu perfil. Confira o cadastro no Supabase e as permissões.'
+          );
           return;
         }
 
-        const payload = result?.data ?? result;
+        if (!data.active) {
+          setLoginError(
+            'Conta desativada. Entre em contato com a Diretoria.'
+          );
 
-        const campaigns = Array.isArray(payload?.campanhas)
-          ? payload.campanhas
-          : Array.isArray(payload?.data?.campanhas)
-            ? payload.data.campanhas
-            : [];
+          await supabase.auth.signOut();
+          return;
+        }
 
-        setArgusCampaigns(campaigns);
-
-        const successMessage =
-          campaigns.length > 0
-            ? 'Conexão validada. ' +
-              campaigns.length +
-              ' campanha(s) retornada(s).'
-            : 'O servidor respondeu, mas nenhuma campanha foi retornada.';
-
-        setArgusStatus({
-          loading: false,
-          connected: true,
-          message: successMessage,
-        });
-      } catch (error) {
-        if (cancelled) return;
-
-        setArgusStatus({
-          loading: false,
-          connected: false,
-          message:
-            error?.message ||
-            'Não foi possível consultar o servidor do Argus.',
-        });
-
-        setArgusCampaigns([]);
+        setRealData(data);
+      } catch {
+        if (!cancelled) {
+          setDataError(
+            'Falha ao consultar o perfil. Tente novamente.'
+          );
+        }
       }
     }
 
-    checkArgus();
+    loadProfile();
 
     return () => {
       cancelled = true;
     };
-  }, [session, realData]);
+  }, [session]);
 
   // Verifica a conexão com o Argus para usuários da Diretoria.
   useEffect(() => {
@@ -227,7 +169,6 @@ function App() {
 
         if (cancelled) return;
 
-
         if (!response.ok) {
           const errorMessage =
             result && result.error
@@ -245,7 +186,6 @@ function App() {
           return;
         }
 
-
         const payload = result?.data ?? result;
 
         const campaigns = Array.isArray(payload?.campanhas)
@@ -259,26 +199,23 @@ function App() {
         setArgusStatus({
           loading: false,
           connected: true,
-          message: campaigns.length
-            ? `Conexão validada. ${campaigns.length} campanha(s) retornada(s).`
-            : 'O servidor respondeu, mas nenhuma campanha foi retornada.',
+          message:
+            campaigns.length > 0
+              ? 'Conexão validada. ' +
+                campaigns.length +
+                ' campanha(s) retornada(s).'
+              : 'O servidor respondeu, mas nenhuma campanha foi retornada.',
         });
       } catch (error) {
         if (cancelled) return;
- id="v7h6pn"
-        const successMessage =
-          campaigns.length > 0
-            ? 'Conexão validada. ' +
-              campaigns.length +
-              ' campanha(s) retornada(s).'
-            : 'O servidor respondeu, mas nenhuma campanha foi retornada.';
 
         setArgusStatus({
           loading: false,
-          connected: true,
-          message: successMessage,
+          connected: false,
+          message:
+            error?.message ||
+            'Não foi possível consultar o servidor do Argus.',
         });
-
 
         setArgusCampaigns([]);
       }
@@ -289,8 +226,8 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [session, realData]);
-
+  }, [session, realData]); 
+  
   // Login.
   async function handleLogin(event) {
     event.preventDefault();
