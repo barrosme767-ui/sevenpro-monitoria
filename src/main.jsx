@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase } from './supabase';
+
+const sampleCalls = [];
+
 function App() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
