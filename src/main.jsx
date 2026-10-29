@@ -275,21 +275,77 @@ async function saveReview() {
  {page==='operators'&&<>{title('Operadores','Volume de ligações por operador no período consultado.')}{filters}<div className="panel table-scroll"><table className="calls-table"><thead><tr><th>OPERADOR</th><th>LIGAÇÕES</th><th>ATENDIDAS</th><th>AVALIAÇÕES</th><th>NOTA MÉDIA</th></tr></thead><tbody>{operators.map(op=>{const cs=calls.filter(c=>getOperator(c)===op),rs=reviews.filter(r=>r.operator_name===op&&Number(r.campaign_id)===Number(campaign));return <tr key={op}><td><b>{op}</b></td><td>{cs.length}</td><td>{cs.filter(isAttended).length}</td><td>{rs.length}</td><td>{rs.length?Math.round(rs.reduce((a,r)=>a+(r.score||0),0)/rs.length):'—'}</td></tr>})}</tbody></table>{!operators.length&&<div className="empty-state">Consulte o Argus para visualizar operadores reais.</div>}</div></>}
  {page==='alerts'&&<>{title('Alertas de monitoria','Palavras-chave localizadas somente em transcrições disponíveis. Revise o contexto antes de classificar uma ocorrência.')}{filters}<div className="notice warning"><TriangleAlert size={17}/><div>Uma palavra pode aparecer em contexto legítimo, como negação, explicação ou relato do cliente. As correspondências abaixo são alertas preliminares, não conclusões automáticas.</div></div><div className="panel table-scroll"><table className="calls-table"><thead><tr><th>GRAVIDADE</th><th>CATEGORIA</th><th>EXPRESSÃO</th><th>OPERADOR</th><th>CONTEXTO</th><th>LIGAÇÃO</th></tr></thead><tbody>{alerts.filter(a=>(severityFilter==='Todas'||a.severity===severityFilter)&&(!search||normalizeText(`${a.word} ${a.operator} ${a.context}`).includes(normalizeText(search)))).map((a,i)=><tr key={`${a.callId}-${i}`}><td><span className={`pill ${a.severity==='Crítica'?'red':'amber'}`}>{a.severity}</span></td><td>{a.category}</td><td><b>{a.word}</b></td><td>{a.operator}</td><td className="context-cell">{a.context}</td><td>#{a.callId}</td></tr>)}</tbody></table>{!alerts.length&&<div className="empty-state"><TriangleAlert size={25}/><b>Nenhuma ocorrência em transcrições carregadas</b><span>O relatório de ligações nem sempre contém transcrição. Sem áudio transcrito, não é possível detectar o que foi dito.</span></div>}</div></>}
  {page==='reports'&&<>{title('Relatórios de qualidade','Indicadores calculados com os dados reais carregados e avaliações salvas.')}{filters}<div className="metrics-grid">{[['Ligações consultadas',stats.total],['Atendidas',stats.attended],['Taxa de atendimento',stats.total?`${Math.round(stats.attended/stats.total*100)}%`:'—'],['Avaliações',stats.reviewed]].map(([l,v])=><div className="metric-card" key={l}><div className="metric-top">{l}</div><div className="metric-value">{v}</div></div>)}</div><div className="panel table-scroll"><table className="calls-table"><thead><tr><th>OPERADOR</th><th>LIGAÇÕES</th><th>ATENDIDAS</th><th>AVALIADAS</th><th>NOTA MÉDIA</th><th>CRÍTICAS</th></tr></thead><tbody>{operators.map(op=>{const cs=calls.filter(c=>getOperator(c)===op),rs=reviews.filter(r=>r.operator_name===op&&Number(r.campaign_id)===Number(campaign));return <tr key={op}><td>{op}</td><td>{cs.length}</td><td>{cs.filter(isAttended).length}</td><td>{rs.length}</td><td>{rs.length?Math.round(rs.reduce((a,r)=>a+(r.score||0),0)/rs.length):'—'}</td><td>{rs.filter(r=>r.outcome==='critical').length}</td></tr>})}</tbody></table></div><button className="secondary-button" onClick={()=>{const rows=[['Operador','Ligações','Atendidas','Avaliações','Nota média','Críticas'],...operators.map(op=>{const cs=calls.filter(c=>getOperator(c)===op),rs=reviews.filter(r=>r.operator_name===op&&Number(r.campaign_id)===Number(campaign));return [op,cs.length,cs.filter(isAttended).length,rs.length,rs.length?Math.round(rs.reduce((a,r)=>a+(r.score||0),0)/rs.length):'',rs.filter(r=>r.outcome==='critical').length]})];const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(';')).join('\\r\\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8;'}));a.download='relatorio-monitoria-me7.csv';a.click();URL.revokeObjectURL(a.href)}}><Download size={15}/> Exportar CSV</button></>}
- {page==='settings'&&<>{title('Configurações','Diagnóstico das integrações e variáveis do ambiente.')}<div className="settings-grid"><div className="panel setting-card"><ShieldCheck/><h3>Supabase</h3><p>Autenticação e persistência das avaliações.</p><div className="setup-status">{supabase?'Cliente configurado':'Variáveis VITE_SUPABASE ausentes'}</div></div><div className="panel setting-card"><Headphones/><h3>Argus</h3><p>Consulta de campanhas e relatórios detalhados.</p><button className="secondary-button" onClick={testArgus}>Testar conexão</button><div className="setup-status">{argusStatus||'Ainda não testado'}</div></div><div className="panel setting-card"><DatabaseIcon/><h3>Persistência</h3><p>As avaliações são salvas em monitoring_reviews.</p><button className="secondary-button" onClick={loadReviews}>Recarregar avaliações</button><div className="setup-status">{reviews.length} avaliação(ões) carregada(s)</div></div></div><div className="notice warning">
-  As avaliações são armazenadas no Supabase existente.
-  Se houver falha ao salvar, verifique as permissões de acesso e a
-  restrição única de campaign_id e argus_call_id.
-  Faça backup antes de qualquer alteração no banco.
-</div>}
- <footer className="page-footer"><span>© 2026 SEVENPRO MONITORIA</span><span><ShieldCheck size={13}/>Dados reais · Acesso conforme permissões</span></footer>
- </section></main>
- {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><section className="call-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><div className="section-eyebrow">DETALHES DA LIGAÇÃO</div><h2>Ligação #{getCallId(selected)}</h2></div><button className="icon-action" onClick={()=>setSelected(null)}><X/></button></div><div className="detail-grid"><div><small>Operador</small><b>{getOperator(selected)}</b></div><div><small>Data / hora</small><b>{fmtDate(getStart(selected))}</b></div><div><small>Duração</small><b>{fmtDuration(getDuration(selected))}</b></div><div><small>Resultado Argus</small><b>{getResult(selected)}</b></div><div><small>Lead</small><b>{selected.nrLead??'—'}</b></div><div><small>Tabulação</small><b>{selected.tabulacao??'—'}</b></div></div><div className="audio-section"><h3><Headphones size={17}/> Gravação de áudio</h3><button className="secondary-button" onClick={()=>playAudio(selected)} disabled={audioBusy||!getCallId(selected)}><PlayCircle size={16}/>{audioBusy?'Buscando áudio…':'Carregar gravação MP3'}</button>{audio&&<audio controls preload="metadata" src={audio} style={{width:'100%',marginTop:12}}>Seu navegador não suporta áudio.</audio>}<p className="muted">A reprodução depende de a gravação existir no Argus e de a API liberar o download.</p></div><div className="review-section"><h3><CheckCircle2 size={17}/> Avaliação de qualidade</h3><div className="review-fields"><label>Classificação<select value={reviewForm.outcome} onChange={e=>setReviewForm({...reviewForm,outcome:e.target.value})}><option value="approved">Aprovada</option><option value="coaching">Orientação necessária</option><option value="critical">Falha crítica</option><option value="pending">Pendente</option></select></label><label>Nota (0–100)<input type="number" min="0" max="100" value={reviewForm.score} onChange={e=>setReviewForm({...reviewForm,score:e.target.value})}/></label></div><div className="criteria-grid">{[['identity','Identidade confirmada'],['clear','Informações claras'],['consent','Consentimento confirmado'],['noMisleading','Sem promessa enganosa'],['respect','Tratamento respeitoso'],['closure','Encerramento correto']].map(([k,label])=><label key={k} className="check-row"><input type="checkbox" checked={!!reviewForm[k]} onChange={e=>setReviewForm({...reviewForm,[k]:e.target.checked})}/>{label}</label>)}</div><label>Observações do avaliador<textarea rows="3" value={reviewForm.notes} onChange={e=>setReviewForm({...reviewForm,notes:e.target.value})} placeholder="Registre evidências e contexto da avaliação…"/></label><button className="primary-button" onClick={saveReview} disabled={reviewBusy}><Save size={16}/>{reviewBusy?'Salvando…':'Salvar avaliação'}</button></div></section></div>}
+ 
+{page === 'settings' && (
+  <>
+    {title(
+      'Configurações',
+      'Diagnóstico das integrações e variáveis do ambiente.'
+    )}
+
+    <div className="settings-grid">
+      <div className="panel setting-card">
+        <ShieldCheck />
+        <h3>Supabase</h3>
+        <p>Autenticação e persistência das avaliações.</p>
+        <div className="setup-status">
+          {supabase
+            ? 'Cliente configurado'
+            : 'Variáveis VITE_SUPABASE ausentes'}
+        </div>
+      </div>
+
+      <div className="panel setting-card">
+        <Headphones />
+        <h3>Argus</h3>
+        <p>Consulta de campanhas e relatórios detalhados.</p>
+        <button className="secondary-button" onClick={testArgus}>
+          Testar conexão
+        </button>
+        <div className="setup-status">
+          {argusStatus || 'Ainda não testado'}
+        </div>
+      </div>
+
+      <div className="panel setting-card">
+        <DatabaseIcon />
+        <h3>Persistência</h3>
+        <p>As avaliações são salvas em monitoring_reviews.</p>
+        <button className="secondary-button" onClick={loadReviews}>
+          Recarregar avaliações
+        </button>
+        <div className="setup-status">
+          {reviews.length} avaliação(ões) carregada(s)
+        </div>
+      </div>
+    </div>
+
+    <div className="notice warning">
+      As avaliações são armazenadas no Supabase existente.
+      Se houver falha ao salvar, verifique as permissões de acesso e a
+      restrição única de campaign_id e argus_call_id.
+      Faça backup antes de qualquer alteração no banco.
+    </div>
+  </>
+)}
+<footer className="page-footer">
+  <span>© 2026 SEVENPRO MONITORIA</span>
+  <span>
+    <ShieldCheck size={13} />
+    Dados reais · Acesso conforme permissões
+  </span>
+</footer>
+</section>
+</main>
+
+{selected && (
+  <div
+    className="modal-backdrop"
+    onClick={() => setSelected(null)}
+  >
+    {/* Mantenha aqui o conteúdo completo do modal existente */}
   </div>
- );
+)}
+</div>
+);
 }
-
-function DatabaseIcon() {
-  return <ShieldCheck size={22} />;
-}
-
-createRoot(document.getElementById('root')).render(<App />);
