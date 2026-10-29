@@ -172,19 +172,24 @@ function App() {
 
         if (cancelled) return;
 
+
         if (!response.ok) {
+          const errorMessage =
+            result && result.error
+              ? result.error
+              : 'Falha na consulta ao Argus. Código HTTP: ' +
+                response.status;
+
           setArgusStatus({
             loading: false,
             connected: false,
-            message:
-              result?.error ||
-              `Falha na consulta ao Argus (HTTP ${response.status}).`,
+            message: errorMessage,
           });
 
           setArgusCampaigns([]);
           return;
         }
-```
+
 
         const payload = result?.data ?? result;
 
