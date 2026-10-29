@@ -26,7 +26,33 @@ function App(){
  const [argusStatus,setArgusStatus]=useState('');
  useEffect(()=>{if(!supabase){setAuthReady(true);return}let mounted=true;supabase.auth.getSession().then(({data})=>{if(mounted){setSession(data.session);setAuthReady(true)}}).catch(()=>setAuthReady(true));const {data:{subscription}}=supabase.auth.onAuthStateChange((_e,s)=>{setSession(s);setProfile(null);setCalls([]);setReviews([])});return()=>{mounted=false;subscription.unsubscribe()}},[]);
  useEffect(()=>{if(!session||!supabase)return;let live=true;(async()=>{const {data,error}=await supabase.from('profiles').select('display_name,role,active').eq('id',session.user.id).single();if(!live)return;if(error||!data){setError('Perfil não localizado. Confira profiles e as políticas RLS do Supabase.');return}if(!data.active){await supabase.auth.signOut();setLoginError('Conta desativada.');return}setProfile(data);})().catch(()=>setError('Não foi possível carregar o perfil.'));return()=>{live=false}},[session]);
- const api=useCallback(async(path,params={})=>{if(!session)throw new Error('Sua sessão expirou. Entre novamente.');const u=new URL(path,window.location.origin);Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')u.searchParams.set(k,String(v))});const r=await fetch(u.pathname+u.search,{headers:{Authorization:`Bearer ${session.access_token}`}});let d;try{d=await r.json()}catch{throw new Error('O servidor retornou resposta inválida.')}if(!r.ok)throw new Error(d.error||`Erro HTTP ${r.status}`);return d},[session]);
+ const api=useCallback(async(path,params={})=>{if(!session)throw new Error('Sua sessão expirou. Entre novamente.');const u=new URL(path,window.location.origin);Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')u.searchParams.set(k,String(v))});const r = await fetch(u.pathname + u.search, {
+  headers: {
+    Authorization: `Bearer ${session.access_token}`
+  }
+});
+
+const raw = await r.text();
+let d = {};
+
+try {
+  d = raw ? JSON.parse(raw) : {};
+} catch {
+  d = { error: raw || 'Resposta vazia do servidor' };
+}
+
+if (!r.ok) {
+  const message =
+    typeof d.error === 'string'
+      ? d.error
+      : typeof d.message === 'string'
+        ? d.message
+        : `Erro HTTP ${r.status}`;
+
+  throw new Error(`${message} (HTTP ${r.status})`);
+}
+
+return d;
  const loadReviews=useCallback(async()=>{if(!supabase||!session)return;const {data,error}=await supabase.from('monitoring_reviews').select('*').order('reviewed_at',{ascending:false}).limit(3000);if(!error)setReviews(data||[]);else console.warn('Reviews indisponíveis:',error.message)},[session]);
  const loadCalls=useCallback(async()=>{if(!session||profile?.role!=='director')return;setLoading(true);setError('');setAudio('');try{const start=toIso(from,8,0);let endDate=to;const now=new Date();let endHour=18,endMinute=0;if(to===localDate(now)&&now.getHours()<18){endHour=Math.max(8,now.getHours());endMinute=now.getHours()<8?0:now.getMinutes()}const end=toIso(endDate,endHour,endMinute);const data=await api('/.netlify/functions/argus-list-detailed-calls',{idCampanha:campaign,periodoInicial:start,periodoFinal:end});const rows=Array.isArray(data.data)?data.data:[];setCalls(rows);setMeta(data.meta||null);setArgusStatus(`Argus conectado · ${rows.length} ligações retornadas`);await loadReviews()}catch(e){setError(e.message);setArgusStatus('Falha na consulta')}finally{setLoading(false)}},[session,profile,from,to,campaign,api,loadReviews]);
  useEffect(()=>{if(profile?.role==='director')loadCalls()},[profile?.role]); // initial load only
