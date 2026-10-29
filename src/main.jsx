@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase } from './supabase';
-import './estilos.css';
+import './styles.css';
 import {
   ChevronDown, ShieldCheck, Settings, CircleHelp, Menu, Bell, LogOut,
   CircleAlert, LockKeyhole, LayoutDashboard, PhoneCall, Users, TriangleAlert,
