@@ -1,111 +1,271 @@
--- SEVENPRO MONITORIA — schema inicial Supabase/Postgres
--- Revise este script em ambiente de teste antes de aplicá-lo em produção.
-create extension if not exists pgcrypto;
+-- SEVENPRO MONITORIA
+-- Regras configuráveis de monitoria e ocorrências identificadas.
 
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  display_name text not null check (char_length(display_name) between 1 and 100),
-  role text not null check (role in ('director','manager','supervisor')),
-  manager_id uuid references public.profiles(id) on delete restrict,
-  supervisor_id uuid references public.profiles(id) on delete restrict,
+create table if not exists public.monitoring_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  severity text not null
+    check (severity in ('critical', 'high', 'medium', 'low')),
+  description text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.monitoring_rules (
+  id uuid primary key default gen_random_uuid(),
+  category_id uuid not null
+    references public.monitoring_categories(id) on delete restrict,
+  rule_type text not null
+    check (rule_type in ('keyword', 'phrase', 'behavior')),
+  expression text not null,
+  normalized_expression text not null,
   active boolean not null default true,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint profile_hierarchy_check check (
-    (role = 'director' and manager_id is null and supervisor_id is null) or
-    (role = 'manager' and manager_id is null and supervisor_id is null) or
-    (role = 'supervisor' and manager_id is not null and supervisor_id is null)
-  )
+  unique (category_id, rule_type, normalized_expression)
 );
 
-create table if not exists public.call_records (
+create table if not exists public.monitoring_findings (
   id uuid primary key default gen_random_uuid(),
-  source text not null default 'argus' check (source in ('argus')),
-  argus_call_id text not null,
-  argus_campaign_id integer not null,
-  argus_lead_id text,
-  operator_name text,
-  operator_login text,
-  manager_id uuid references public.profiles(id) on delete set null,
-  supervisor_id uuid references public.profiles(id) on delete set null,
-  team_name text,
-  call_started_at timestamptz,
-  duration_seconds integer check (duration_seconds is null or duration_seconds >= 0),
-  call_result text,
-  audio_storage_path text,
-  audio_format text check (audio_format is null or audio_format in ('MP3','WAV')),
-  transcript text,
-  ai_score numeric(5,2) check (ai_score is null or ai_score between 0 and 100),
-  vocal_indicators jsonb not null default '{}'::jsonb,
-  score_breakdown jsonb not null default '{}'::jsonb,
-  compliance_status text not null default 'pending' check (compliance_status in ('pending','approved','review','confirmed_issue')),
-  ai_summary text,
-  human_review_status text not null default 'not_reviewed' check (human_review_status in ('not_reviewed','in_review','approved','rejected','coaching_required')),
-  source_payload jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique(argus_campaign_id, argus_call_id)
-);
-
-create table if not exists public.audit_logs (
-  id bigint generated always as identity primary key,
-  actor_id uuid references public.profiles(id) on delete set null,
-  action text not null,
-  target_user_id uuid references public.profiles(id) on delete set null,
-  call_record_id uuid references public.call_records(id) on delete set null,
-  details jsonb not null default '{}'::jsonb,
+  call_record_id uuid not null
+    references public.call_records(id) on delete cascade,
+  rule_id uuid references public.monitoring_rules(id) on delete set null,
+  category_id uuid
+    references public.monitoring_categories(id) on delete set null,
+  detected_text text not null,
+  context_text text,
+  timestamp_seconds integer
+    check (timestamp_seconds is null or timestamp_seconds >= 0),
+  severity text not null
+    check (severity in ('critical', 'high', 'medium', 'low')),
+  detection_method text not null default 'keyword'
+    check (detection_method in ('keyword', 'ai', 'human')),
+  review_status text not null default 'pending'
+    check (review_status in (
+      'pending',
+      'confirmed',
+      'dismissed'
+    )),
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  review_notes text,
   created_at timestamptz not null default now()
 );
 
-create index if not exists profiles_manager_idx on public.profiles(manager_id);
-create index if not exists profiles_supervisor_idx on public.profiles(supervisor_id);
-create index if not exists calls_started_idx on public.call_records(call_started_at desc);
-create index if not exists calls_manager_date_idx on public.call_records(manager_id, call_started_at desc);
-create index if not exists calls_supervisor_date_idx on public.call_records(supervisor_id, call_started_at desc);
-create index if not exists calls_operator_idx on public.call_records(operator_login);
-create index if not exists audit_created_idx on public.audit_logs(created_at desc);
+create index if not exists monitoring_rules_category_idx
+  on public.monitoring_rules(category_id, active);
 
-create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$ begin new.updated_at = now(); return new; end; $$;
-drop trigger if exists profiles_set_updated_at on public.profiles;
-create trigger profiles_set_updated_at before update on public.profiles for each row execute function public.set_updated_at();
-drop trigger if exists call_records_set_updated_at on public.call_records;
-create trigger call_records_set_updated_at before update on public.call_records for each row execute function public.set_updated_at();
+create index if not exists monitoring_findings_call_idx
+  on public.monitoring_findings(call_record_id);
 
-create or replace function public.current_profile_role()
-returns text language sql stable security definer set search_path = public
-as $$ select role from public.profiles where id = auth.uid() and active = true limit 1; $$;
+create index if not exists monitoring_findings_status_idx
+  on public.monitoring_findings(review_status, severity, created_at desc);
 
-alter table public.profiles enable row level security;
-alter table public.call_records enable row level security;
-alter table public.audit_logs enable row level security;
+create index if not exists monitoring_findings_category_idx
+  on public.monitoring_findings(category_id, created_at desc);
 
--- Profiles: user sees self; directors see all; managers see their reporting supervisors;
--- supervisors see only their own profile and linked subordinate/operator profiles if configured.
-drop policy if exists profiles_select_scoped on public.profiles;
-create policy profiles_select_scoped on public.profiles for select to authenticated using (
-  id = auth.uid()
-  or public.current_profile_role() = 'director'
-  or (public.current_profile_role() = 'manager' and manager_id = auth.uid())
-  or (public.current_profile_role() = 'supervisor' and supervisor_id = auth.uid())
-);
--- No direct insert/delete/update policies on profiles. Account and role changes must use trusted server-side functions.
+drop trigger if exists monitoring_categories_set_updated_at
+  on public.monitoring_categories;
 
--- Calls: role-scoped visibility enforced in the database, not only in the frontend.
-drop policy if exists call_records_select_scoped on public.call_records;
-create policy call_records_select_scoped on public.call_records for select to authenticated using (
+create trigger monitoring_categories_set_updated_at
+before update on public.monitoring_categories
+for each row execute function public.set_updated_at();
+
+drop trigger if exists monitoring_rules_set_updated_at
+  on public.monitoring_rules;
+
+create trigger monitoring_rules_set_updated_at
+before update on public.monitoring_rules
+for each row execute function public.set_updated_at();
+
+alter table public.monitoring_categories enable row level security;
+alter table public.monitoring_rules enable row level security;
+alter table public.monitoring_findings enable row level security;
+
+-- Apenas a Diretoria pode consultar e administrar as regras.
+drop policy if exists monitoring_categories_director
+  on public.monitoring_categories;
+
+create policy monitoring_categories_director
+on public.monitoring_categories
+for all to authenticated
+using (public.current_profile_role() = 'director')
+with check (public.current_profile_role() = 'director');
+
+drop policy if exists monitoring_rules_director
+  on public.monitoring_rules;
+
+create policy monitoring_rules_director
+on public.monitoring_rules
+for all to authenticated
+using (public.current_profile_role() = 'director')
+with check (public.current_profile_role() = 'director');
+
+-- A ocorrência só pode ser consultada por quem pode consultar
+-- a ligação correspondente.
+drop policy if exists monitoring_findings_scoped_select
+  on public.monitoring_findings;
+
+create policy monitoring_findings_scoped_select
+on public.monitoring_findings
+for select to authenticated
+using (
   public.current_profile_role() = 'director'
-  or (public.current_profile_role() = 'manager' and manager_id = auth.uid())
-  or (public.current_profile_role() = 'supervisor' and supervisor_id = auth.uid())
+  or exists (
+    select 1
+    from public.call_records c
+    where c.id = monitoring_findings.call_record_id
+      and (
+        (
+          public.current_profile_role() = 'manager'
+          and c.manager_id = auth.uid()
+        )
+        or
+        (
+          public.current_profile_role() = 'supervisor'
+          and c.supervisor_id = auth.uid()
+        )
+      )
+  )
 );
--- No direct call-record inserts/updates from browser clients. Use server-side ingestion/review functions with validation.
 
-drop policy if exists audit_logs_director_select on public.audit_logs;
-create policy audit_logs_director_select on public.audit_logs for select to authenticated using (public.current_profile_role() = 'director');
--- No browser-side writes to audit logs. Use trusted server-side functions.
+-- Não permitir gravação direta das ocorrências pelo navegador.
+-- A detecção e a revisão devem passar por funções de servidor
+-- que validem a identidade e as permissões.
 
--- Initial bootstrap (run manually only once after creating the first auth user in Supabase Auth):
--- Replace the UUID and name. The first account is the sole initial director.
--- insert into public.profiles (id, display_name, role, active)
--- values ('UUID-DO-USUARIO-AUTH', 'Diretoria ME7', 'director', true);
+-- Categorias iniciais da monitoria.
+
+insert into public.monitoring_categories
+  (name, severity, description)
+values
+  (
+    'Ameaça ao beneficiário',
+    'critical',
+    'Ameaças de bloqueio, cancelamento ou perda de benefício.'
+  ),
+  (
+    'Coação comercial',
+    'high',
+    'Pressão indevida para contratar ou aceitar uma proposta.'
+  ),
+  (
+    'Falsa promessa',
+    'high',
+    'Promessas de aprovação, liberação ou dinheiro garantido.'
+  ),
+  (
+    'Falta de consentimento',
+    'critical',
+    'Indícios de contratação ou confirmação sem autorização.'
+  ),
+  (
+    'Abuso verbal',
+    'high',
+    'Ofensas, humilhações ou tratamento desrespeitoso.'
+  ),
+  (
+    'Pressão por urgência',
+    'medium',
+    'Pressão comercial baseada em urgência excessiva.'
+  ),
+  (
+    'Ocultação de condições',
+    'high',
+    'Indícios de omissão de informações ou desestímulo à leitura.'
+  ),
+  (
+    'Interrupção e agressividade',
+    'high',
+    'Interrupções repetidas, gritos ou agressividade verbal.'
+  )
+on conflict (name) do nothing;
+
+-- Palavras-chave e frases iniciais.
+-- A expressão normalizada é usada para evitar duplicidade.
+
+with initial_rules(category_name, rule_type, expression) as (
+  values
+    ('Ameaça ao beneficiário', 'phrase', 'Vou bloquear o benefício do senhor'),
+    ('Ameaça ao beneficiário', 'phrase', 'O senhor vai perder seu benefício'),
+    ('Ameaça ao beneficiário', 'phrase', 'Se não fechar, vou cancelar'),
+    ('Ameaça ao beneficiário', 'phrase', 'O senhor ficará sem receber'),
+    ('Ameaça ao beneficiário', 'keyword', 'bloquear benefício'),
+    ('Ameaça ao beneficiário', 'keyword', 'cancelar benefício'),
+    ('Ameaça ao beneficiário', 'keyword', 'suspender pagamento'),
+    ('Ameaça ao beneficiário', 'keyword', 'vai perder o benefício'),
+    ('Ameaça ao beneficiário', 'keyword', 'ficará sem receber'),
+
+    ('Coação comercial', 'phrase', 'É obrigatório contratar'),
+    ('Coação comercial', 'phrase', 'É obrigatório fazer esse contrato'),
+    ('Coação comercial', 'phrase', 'Não vou resolver se não fechar comigo'),
+    ('Coação comercial', 'keyword', 'tem que aceitar'),
+    ('Coação comercial', 'keyword', 'obrigatório fechar'),
+    ('Coação comercial', 'keyword', 'não tem escolha'),
+
+    ('Falsa promessa', 'phrase', 'O dinheiro está garantido'),
+    ('Falsa promessa', 'keyword', 'dinheiro garantido'),
+    ('Falsa promessa', 'keyword', 'aprovação garantida'),
+    ('Falsa promessa', 'keyword', 'liberação certa'),
+
+    ('Falta de consentimento', 'phrase', 'Não precisa da sua autorização'),
+    ('Falta de consentimento', 'keyword', 'fazer sem autorização'),
+    ('Falta de consentimento', 'keyword', 'confirmar pelo senhor'),
+    ('Falta de consentimento', 'keyword', 'não precisa autorizar'),
+
+    ('Abuso verbal', 'keyword', 'incompetente'),
+    ('Abuso verbal', 'keyword', 'não entende'),
+    ('Abuso verbal', 'keyword', 'cala a boca'),
+
+    ('Pressão por urgência', 'phrase', 'Confirma agora ou perde a oportunidade'),
+    ('Pressão por urgência', 'keyword', 'só hoje'),
+    ('Pressão por urgência', 'keyword', 'agora ou nunca'),
+    ('Pressão por urgência', 'keyword', 'última chance'),
+
+    ('Ocultação de condições', 'phrase', 'Não precisa ler o contrato'),
+    ('Ocultação de condições', 'keyword', 'não precisa ler'),
+    ('Ocultação de condições', 'keyword', 'não vou explicar'),
+    ('Ocultação de condições', 'keyword', 'não tem necessidade de informar')
+)
+insert into public.monitoring_rules
+  (category_id, rule_type, expression, normalized_expression)
+select
+  c.id,
+  r.rule_type,
+  r.expression,
+  lower(trim(r.expression))
+from initial_rules r
+join public.monitoring_categories c
+  on c.name = r.category_name
+on conflict (category_id, rule_type, normalized_expression)
+do nothing;
+
+
+-- Avaliações humanas da monitoria. Migração aditiva; não apaga dados existentes.
+create table if not exists public.monitoring_reviews (
+  id uuid primary key default gen_random_uuid(),
+  argus_call_id text not null,
+  campaign_id integer not null default 1,
+  call_started_at timestamptz,
+  operator_name text,
+  outcome text not null default 'pending'
+    check (outcome in ('approved','coaching','critical','pending')),
+  score integer check (score is null or (score >= 0 and score <= 100)),
+  criteria jsonb not null default '{}'::jsonb,
+  notes text,
+  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (campaign_id, argus_call_id)
+);
+create index if not exists monitoring_reviews_operator_idx
+  on public.monitoring_reviews(operator_name, reviewed_at desc);
+create index if not exists monitoring_reviews_date_idx
+  on public.monitoring_reviews(call_started_at desc);
+alter table public.monitoring_reviews enable row level security;
+drop policy if exists monitoring_reviews_director_all on public.monitoring_reviews;
+create policy monitoring_reviews_director_all on public.monitoring_reviews
+for all to authenticated
+using (public.current_profile_role() = 'director')
+with check (public.current_profile_role() = 'director');
