@@ -113,17 +113,63 @@ export async function handler(event) {
       });
     }
 
-    const fim = new Date();
-    const inicio = new Date(
-      fim.getTime() - horas * 60 * 60 * 1000
-    );
+   // Horário de São Paulo: consulta de hoje às 08h até agora,
+// sem ultrapassar as 18h.
+const agora = new Date();
 
-    const payload = {
-      idCampanha,
-      periodoInicial: inicio.toISOString(),
-      periodoFinal: fim.toISOString()
-    };
+const horarioSaoPaulo = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  hourCycle: 'h23'
+});
 
+const partes = Object.fromEntries(
+  horarioSaoPaulo
+    .formatToParts(agora)
+    .filter(p => p.type !== 'literal')
+    .map(p => [p.type, p.value])
+);
+
+const ano = Number(partes.year);
+const mes = Number(partes.month);
+const dia = Number(partes.day);
+const hora = Number(partes.hour);
+
+// Cria as referências de 08h e 18h em horário de São Paulo.
+// O fuso de São Paulo é UTC-3.
+const inicio = new Date(
+  Date.UTC(ano, mes - 1, dia, 11, 0, 0)
+);
+
+const limiteFim = new Date(
+  Date.UTC(ano, mes - 1, dia, 21, 0, 0)
+);
+
+const fim = new Date(
+  Math.min(agora.getTime(), limiteFim.getTime())
+);
+
+if (hora < 8) {
+  return json(200, {
+    sucesso: true,
+    mensagem: 'A consulta de ligações começa às 08h00.',
+    periodo: {
+      inicial: inicio.toISOString(),
+      final: fim.toISOString()
+    },
+    quantidadeLigacoes: 0
+  });
+}
+
+const payload = {
+  idCampanha,
+  periodoInicial: inicio.toISOString(),
+  periodoFinal: fim.toISOString()
+};
+    
 const baseUrl = String(ARGUS_API_URL).replace(/\/+$/, '');
 
 const controller = new AbortController();
