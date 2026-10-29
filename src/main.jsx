@@ -51,8 +51,10 @@ if (!r.ok) {
 
   throw new Error(`${message} (HTTP ${r.status})`);
 }
-
 return d;
+}, [session]);
+
+const loadReviews = useCallback(async () => {
  const loadReviews=useCallback(async()=>{if(!supabase||!session)return;const {data,error}=await supabase.from('monitoring_reviews').select('*').order('reviewed_at',{ascending:false}).limit(3000);if(!error)setReviews(data||[]);else console.warn('Reviews indisponíveis:',error.message)},[session]);
  const loadCalls=useCallback(async()=>{if(!session||profile?.role!=='director')return;setLoading(true);setError('');setAudio('');try{const start=toIso(from,8,0);let endDate=to;const now=new Date();let endHour=18,endMinute=0;if(to===localDate(now)&&now.getHours()<18){endHour=Math.max(8,now.getHours());endMinute=now.getHours()<8?0:now.getMinutes()}const end=toIso(endDate,endHour,endMinute);const data=await api('/.netlify/functions/argus-list-detailed-calls',{idCampanha:campaign,periodoInicial:start,periodoFinal:end});const rows=Array.isArray(data.data)?data.data:[];setCalls(rows);setMeta(data.meta||null);setArgusStatus(`Argus conectado · ${rows.length} ligações retornadas`);await loadReviews()}catch(e){setError(e.message);setArgusStatus('Falha na consulta')}finally{setLoading(false)}},[session,profile,from,to,campaign,api,loadReviews]);
  useEffect(()=>{if(profile?.role==='director')loadCalls()},[profile?.role]); // initial load only
