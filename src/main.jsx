@@ -1,4 +1,3 @@
-
 import React,{useState,useEffect,useMemo, useCallback} from 'react';
 import {createRoot} from 'react-dom/client';
 import {supabase} from './supabase';
@@ -53,20 +52,210 @@ if (!r.ok) {
 }
 return d;
 }, [session]);
-
 const loadReviews = useCallback(async () => {
- const loadReviews=useCallback(async()=>{if(!supabase||!session)return;const {data,error}=await supabase.from('monitoring_reviews').select('*').order('reviewed_at',{ascending:false}).limit(3000);if(!error)setReviews(data||[]);else console.warn('Reviews indisponíveis:',error.message)},[session]);
- const loadCalls=useCallback(async()=>{if(!session||profile?.role!=='director')return;setLoading(true);setError('');setAudio('');try{const start=toIso(from,8,0);let endDate=to;const now=new Date();let endHour=18,endMinute=0;if(to===localDate(now)&&now.getHours()<18){endHour=Math.max(8,now.getHours());endMinute=now.getHours()<8?0:now.getMinutes()}const end=toIso(endDate,endHour,endMinute);const data=await api('/.netlify/functions/argus-list-detailed-calls',{idCampanha:campaign,periodoInicial:start,periodoFinal:end});const rows=Array.isArray(data.data)?data.data:[];setCalls(rows);setMeta(data.meta||null);setArgusStatus(`Argus conectado · ${rows.length} ligações retornadas`);await loadReviews()}catch(e){setError(e.message);setArgusStatus('Falha na consulta')}finally{setLoading(false)}},[session,profile,from,to,campaign,api,loadReviews]);
- useEffect(()=>{if(profile?.role==='director')loadCalls()},[profile?.role]); // initial load only
- const filtered=useMemo(()=>calls.filter(c=>{const op=getOperator(c),res=getResult(c),id=getCallId(c);const rev=reviews.find(r=>r.argus_call_id===id&&Number(r.campaign_id)===Number(campaign));const status=rev?.outcome||'pending';const text=normalizeText([id,op,res,c.nrLead,c.tabulacao].join(' '));return(operator==='Todos'||op===operator)&&(resultFilter==='Todos'||(resultFilter==='Atendidas'?isAttended(c):res.toLowerCase().includes(normalizeText(resultFilter))))&&(reviewFilter==='Todos'||(reviewFilter==='Pendentes'?status==='pending':reviewFilter==='Avaliadas'?status!=='pending':status===reviewFilter))&&text.includes(normalizeText(search))}),[calls,reviews,operator,resultFilter,reviewFilter,search,campaign]);
- const alerts=useMemo(()=>calls.flatMap(scanCall),[calls]);
+  if (!supabase || !session) return;
+
+  const { data, error } = await supabase
+    .from('monitoring_reviews')
+    .select('*')
+    .order('reviewed_at', { ascending: false })
+    .limit(3000);
+
+  if (error) {
+    console.error('Erro ao carregar avaliações:', error.message);
+    setError(`Não foi possível carregar as avaliações: ${error.message}`);
+    return;
+  }
+
+  setReviews(data || []);
+}, [session]);
+
+const loadCalls = useCallback(async () => {
+  if (!session || profile?.role !== 'director') return;
+
+  setLoading(true);
+  setError('');
+  setAudio('');
+
+  try {
+    const start = toIso(from, 8, 0);
+    const now = new Date();
+
+    let endHour = 18;
+    let endMinute = 0;
+
+    if (to === localDate(now) && now.getHours() < 18) {
+      endHour = Math.max(8, now.getHours());
+      endMinute = now.getHours() < 8 ? 0 : now.getMinutes();
+    }
+
+    const end = toIso(to, endHour, endMinute);
+
+    const data = await api(
+      '/.netlify/functions/argus-list-detailed-calls',
+      {
+        idCampanha: campaign,
+        periodoInicial: start,
+        periodoFinal: end
+      }
+    );
+
+    if (!data || !Array.isArray(data.data)) {
+      throw new Error(
+        data?.error ||
+        'O Argus respondeu, mas não retornou uma lista válida de ligações.'
+      );
+    }
+
+    const rows = data.data;
+
+    setCalls(rows);
+    setMeta(data.meta || null);
+    setArgusStatus(
+      `Consulta concluída · ${rows.length} ligação(ões) retornada(s)`
+    );
+
+    await loadReviews();
+  } catch (e) {
+    console.error('Erro ao consultar ligações:', e);
+
+    setError(
+      e?.message ||
+      'Não foi possível consultar as ligações. Tente novamente.'
+    );
+
+    setArgusStatus('Falha na consulta');
+  } finally {
+    setLoading(false);
+  }
+}, [session, profile, from, to, campaign, api, loadReviews]);
+
+useEffect(() => {
+  if (profile?.role === 'director') {
+    loadCalls();
+  }
+}, [profile?.role, loadCalls]);
+ const filtered = useMemo(() => {
+  return calls.filter(c => {
+    const op = getOperator(c);
+    const res = getResult(c);
+    const id = getCallId(c);
+
+    const rev = reviews.find(
+      r =>
+        String(r.argus_call_id) === id &&
+        Number(r.campaign_id) === Number(campaign)
+    );
+
+    const status = rev?.outcome || 'pending';
+
+    const text = normalizeText(
+      [id, op, res, c.nrLead, c.tabulacao].join(' ')
+    );
+
+    const matchesOperator =
+      operator === 'Todos' || op === operator;
+
+    const matchesResult =
+      resultFilter === 'Todos' ||
+      (resultFilter === 'Atendidas'
+        ? isAttended(c)
+        : normalizeText(res).includes(normalizeText(resultFilter)));
+
+    const matchesReview =
+      reviewFilter === 'Todos' ||
+      (reviewFilter === 'Pendentes'
+        ? status === 'pending'
+        : reviewFilter === 'Avaliadas'
+          ? status !== 'pending'
+          : status === reviewFilter);
+
+    const matchesSearch =
+      text.includes(normalizeText(search));
+
+    return (
+      matchesOperator &&
+      matchesResult &&
+      matchesReview &&
+      matchesSearch
+    );
+  });
+}, [
+  calls,
+  reviews,
+  campaign,
+  operator,
+  resultFilter,
+  reviewFilter,
+  search
+]);
+
+const alerts = useMemo(
+  () => calls.flatMap(scanCall),
+  [calls]
+);
  const operators=useMemo(()=>[...new Set(calls.map(getOperator))].sort(),[calls]);
  const stats=useMemo(()=>({total:calls.length,attended:calls.filter(isAttended).length,reviewed:reviews.filter(r=>Number(r.campaign_id)===Number(campaign)&&calls.some(c=>getCallId(c)===r.argus_call_id)).length,operators:operators.length}),[calls,reviews,campaign,operators]);
  async function login(e){e.preventDefault();setLoginError('');if(!supabase){setLoginError('Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');return}setBusy(true);const {error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)setLoginError('Não foi possível entrar. Confira e-mail e senha.');setBusy(false)}
  async function logout(){await supabase?.auth.signOut();setSession(null);setProfile(null)}
  async function openCall(c){setSelected(c);setAudio('');const id=getCallId(c);const old=reviews.find(r=>r.argus_call_id===id&&Number(r.campaign_id)===Number(campaign));setReviewForm(old?{outcome:old.outcome,score:old.score??100,notes:old.notes||'',...(old.criteria||{})}:{outcome:'approved',score:100,notes:'',identity:true,clear:true,consent:true,noMisleading:true,respect:true,closure:true})}
  async function playAudio(c){setAudioBusy(true);setAudio('');try{const d=await api('/.netlify/functions/argus-download-recording',{idCampanha:campaign,idLigacao:getCallId(c),formato:'MP3'});const mime=(d.formato||'MP3').toUpperCase()==='WAV'?'audio/wav':'audio/mpeg';setAudio(`data:${mime};base64,${d.arquivoBase64}`)}catch(e){setError(e.message)}finally{setAudioBusy(false)}}
- async function saveReview(){if(!selected||!supabase||!session)return;setReviewBusy(true);setError('');const id=getCallId(selected);const payload={argus_call_id:id,campaign_id:Number(campaign),call_started_at:getStart(selected)?new Date(getStart(selected)).toISOString():null,operator_name:getOperator(selected),outcome:reviewForm.outcome,score:Number(reviewForm.score),criteria:{identity:!!reviewForm.identity,clear:!!reviewForm.clear,consent:!!reviewForm.consent,noMisleading:!!reviewForm.noMisleading,respect:!!reviewForm.respect,closure:!!reviewForm.closure},notes:reviewForm.notes,reviewed_by:session.user.id,reviewed_at:new Date().toISOString(),updated_at:new Date().toISOString()};const {error}=await supabase.from('monitoring_reviews').upsert(payload,{onConflict:'campaign_id,argus_call_id'});if(error){setError(`Não foi possível salvar avaliação: ${error.message}. Execute a migração supabase/schema.sql no projeto Supabase.`)}else{await loadReviews();setSelected(null)}setReviewBusy(false)}
+
+async function saveReview() {
+  if (!selected || !supabase || !session) return;
+
+  setReviewBusy(true);
+  setError('');
+
+  try {
+    const id = getCallId(selected);
+
+    const payload = {
+      argus_call_id: id,
+      campaign_id: Number(campaign),
+      call_started_at: getStart(selected)
+        ? new Date(getStart(selected)).toISOString()
+        : null,
+      operator_name: getOperator(selected),
+      outcome: reviewForm.outcome,
+      score: Number(reviewForm.score),
+      criteria: {
+        identity: !!reviewForm.identity,
+        clear: !!reviewForm.clear,
+        consent: !!reviewForm.consent,
+        noMisleading: !!reviewForm.noMisleading,
+        respect: !!reviewForm.respect,
+        closure: !!reviewForm.closure
+      },
+      notes: reviewForm.notes,
+      reviewed_by: session.user.id,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase
+      .from('monitoring_reviews')
+      .upsert(payload, {
+        onConflict: 'campaign_id,argus_call_id'
+      });
+
+    if (error) {
+      setError(
+        `Não foi possível salvar a avaliação: ${error.message}. Verifique as permissões e a restrição única no banco.`
+      );
+      return;
+    }
+
+    await loadReviews();
+    setSelected(null);
+  } catch (err) {
+    setError(
+      `Erro ao salvar avaliação: ${err.message || 'erro inesperado'}.`
+    );
+  } finally {
+    setReviewBusy(false);
+  }
+}
  async function testArgus(){try{setArgusStatus('Testando…');const d=await api('/.netlify/functions/argus-list-campaigns');const list=d.data?.campanhas||[];setArgusStatus(`Conexão OK · ${list.length} campanha(s)`)}catch(e){setArgusStatus(e.message)}}
  if(!authReady)return <div className="loading-screen"><div className="brand-mark">S</div>Preparando ambiente seguro…</div>;
  if(!session)return <div className="login-page"><section className="login-left"><div className="login-brand"><div className="brand-mark">S</div><div><div className="brand-name">SEVENPRO</div><div className="brand-sub">MONITORIA INTELIGENTE</div></div></div><div className="login-pitch"><div className="eyebrow">PLATAFORMA CORPORATIVA</div><h1>Qualidade em cada <span>conversa.</span></h1><p>Central de ligações, avaliação de atendimento e acompanhamento de qualidade da ME7.</p></div><div className="login-left-footer">SEVENPRO • ME7 PROMOTORA</div></section><section className="login-right"><div className="login-form-wrap"><div className="form-heading"><div className="form-kicker">ACESSO CORPORATIVO</div><h2>Acesse sua conta</h2><p>Entre com seu usuário cadastrado no Supabase.</p></div>{(!supabase||loginError)&&<div className="notice warning">{loginError||'Configure as variáveis públicas do Supabase para habilitar o login.'}</div>}<form onSubmit={login}><label>E-mail</label><div className="input-wrap"><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required placeholder="seu.email@empresa.com"/></div><label>Senha</label><div className="input-wrap"><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Sua senha"/></div><button className="primary-button login-submit" disabled={busy||!supabase}>{busy?'Entrando…':'Entrar na plataforma'} <ChevronRight size={16}/></button></form><p className="login-legal">Acesso conforme perfil e permissões configuradas pela Diretoria.</p></div></section></div>;
