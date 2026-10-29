@@ -124,36 +124,28 @@ export async function handler(event) {
       periodoFinal: fim.toISOString()
     };
 
-    const baseUrl = ARGUS_API_URL.replace(
-      /\/+$/,
-      ''
-    );
+ const baseUrl = String(ARGUS_API_URL).replace(/\/+$/, '');
 
     const controller = new AbortController();
+let upstream;
 
-    const timeout = setTimeout(
-      () => controller.abort(),
-      25000
-    );
+const timeout = setTimeout(() => {
+  controller.abort();
+}, 25000);
 
-    let upstream;
-  
-    try {
-      upstream = await fetch(
-        `${baseUrl}/cmd/ligacoesdetalhadas`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'Token-Signature': ARGUS_TOKEN_SIGNATURE
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        }
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
+try {
+  upstream = await fetch(baseUrl + '/cmd/ligacoesdetalhadas', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'Token-Signature': ARGUS_TOKEN_SIGNATURE
+    },
+    body: JSON.stringify(payload),
+    signal: controller.signal
+  });
+} finally {
+  clearTimeout(timeout);
+}
     const responseText = await upstream.text();
 
     if (!upstream.ok) {
