@@ -1,4 +1,6 @@
-
+import React, { useState, useEffect } from 'react';
+import { createRoot } from 'react-dom/client';
+import { supabase } from './supabase';
 function App() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -588,6 +590,16 @@ function App() {
         <CallModal
           call={selectedCall}
           close={() => setSelectedCall(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')).render(
+  <App />
+);
+          
         />
       )}
     </div>
