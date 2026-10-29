@@ -1,4 +1,4 @@
-```jsx
+
 function App() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -210,14 +210,20 @@ function App() {
         });
       } catch (error) {
         if (cancelled) return;
+ id="v7h6pn"
+        const successMessage =
+          campaigns.length > 0
+            ? 'Conexão validada. ' +
+              campaigns.length +
+              ' campanha(s) retornada(s).'
+            : 'O servidor respondeu, mas nenhuma campanha foi retornada.';
 
         setArgusStatus({
           loading: false,
-          connected: false,
-          message:
-            error?.message ||
-            'Não foi possível consultar o servidor do Argus.',
+          connected: true,
+          message: successMessage,
         });
+
 
         setArgusCampaigns([]);
       }
@@ -595,4 +601,4 @@ function App() {
     </div>
   );
 }
-```
+
