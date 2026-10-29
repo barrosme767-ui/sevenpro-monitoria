@@ -250,6 +250,9 @@ return json(200, {
   },
   statusArgus: data.codStatus ?? null,
   mensagemArgus: data.descStatus ?? null,
+    fimDaTabela: data.endOfTable ?? null,
+  quantidadeInformadaArgus: data.qtdeRegistros ?? null,
+  idProximaPagina: data.idProxPagina ?? null,
   estrutura: {
     camposRaiz: Object.keys(data),
     colecoes
