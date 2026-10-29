@@ -148,17 +148,22 @@ try {
 }
     const responseText = await upstream.text();
 
-    if (!upstream.ok) {
-      console.error(
-        'Teste de ligações Argus:',
-        upstream.status
-      );
+if (!upstream.ok) {
+  const detalhe = await upstream.text();
 
-      return json(502, {
-        error: 'O Argus recusou a consulta.',
-        upstreamStatus: upstream.status
-      });
-    }
+  console.error(
+    'Teste de ligações Argus:',
+    upstream.status,
+    detalhe
+  );
+
+  return json(502, {
+    error: 'O Argus recusou a consulta.',
+    upstreamStatus: upstream.status,
+    detalhe: detalhe.slice(0, 1500)
+  });
+}
+
 
     let data;
 
