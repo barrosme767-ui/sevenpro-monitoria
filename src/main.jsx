@@ -1,12 +1,10 @@
-<<<<<<< HEAD
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase } from './supabase';
-=======
+
 import React,{useState,useEffect,useMemo, useCallback} from 'react';
 import {createRoot} from 'react-dom/client';
 import {supabase} from './supabase';
->>>>>>> 9ccc9000b2a92708189f085d93a6f477fb6d1c16
 import './styles.css';
 import './app.css';
 import { PageTitle, EmptyState } from './components.jsx';
@@ -22,7 +20,6 @@ import {
   AlertTriangle, Headphones, UserCog, Eye, EyeOff
 } from 'lucide-react';
 
-<<<<<<< HEAD
 const nav = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'calls', label: 'Chamadas', icon: PhoneCall },
@@ -230,7 +227,7 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
-=======
+
 const NAV=[['overview','Visão geral',LayoutDashboard],['calls','Ligações',PhoneCall],['operators','Operadores',Users],['alerts','Alertas',TriangleAlert],['reports','Relatórios',FileBarChart]];
 const localDate=d=>{const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`};
 function dateWindow(){const now=new Date(), start=new Date(now);start.setHours(8,0,0,0);const end=new Date(now);end.setHours(Math.min(18,now.getHours()),now.getHours()>=18?0:now.getMinutes(),0,0);if(now.getHours()<8)end.setHours(8,0,0,0);return {from:localDate(start),to:localDate(end)}}
@@ -575,4 +572,4 @@ async function saveReview() {
 </div>
 );
 }
->>>>>>> 9ccc9000b2a92708189f085d93a6f477fb6d1c16
+
