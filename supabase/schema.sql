@@ -1,3 +1,160 @@
+-- SEVENPRO MONITORIA — esquema completo e idempotente.
+-- Pode ser executado várias vezes no SQL Editor do Supabase sem apagar dados.
+-- Se as tabelas profiles e call_records já existem, apenas as colunas/políticas que faltam são adicionadas.
+
+create extension if not exists pgcrypto;
+
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin new.updated_at = now(); return new; end $$;
+
+-- ───────── Perfis de usuário ─────────
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  role text not null default 'supervisor',
+  manager_id uuid,
+  supervisor_id uuid,
+  active boolean not null default true,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+alter table public.profiles add column if not exists display_name text;
+alter table public.profiles add column if not exists manager_id uuid;
+alter table public.profiles add column if not exists supervisor_id uuid;
+alter table public.profiles add column if not exists active boolean not null default true;
+alter table public.profiles add column if not exists created_by uuid;
+alter table public.profiles add column if not exists created_at timestamptz not null default now();
+
+-- Libera os novos cargos (remove restrições antigas sobre "role" e recria).
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'public.profiles'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) ilike '%role%' loop
+    execute format('alter table public.profiles drop constraint %I', c.conname);
+  end loop;
+end $$;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('director','manager','supervisor','quality','backoffice','aftersales','hr','admin')) not valid;
+
+create or replace function public.current_profile_role()
+returns text language sql stable security definer set search_path = public as $$
+  select role from public.profiles where id = auth.uid() and active = true
+$$;
+
+-- ───────── Auditoria ─────────
+create table if not exists public.audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid,
+  action text not null,
+  target_user_id uuid,
+  details jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.audit_logs enable row level security;  -- sem políticas: só o servidor grava/lê
+
+-- ───────── Operadores do Argus ─────────
+create table if not exists public.operators (
+  argus_user_id text primary key,
+  name text not null,
+  manager_id uuid,
+  supervisor_id uuid,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table public.operators enable row level security;
+
+-- ───────── Ligações importadas do Argus ─────────
+create table if not exists public.call_records (
+  id uuid primary key default gen_random_uuid(),
+  argus_call_id text not null,
+  operator_name text,
+  call_started_at timestamptz,
+  duration_seconds integer,
+  call_result text,
+  transcript text,
+  ai_score numeric,
+  human_review_status text default 'pending'
+);
+alter table public.call_records add column if not exists argus_user_id text;
+alter table public.call_records add column if not exists tabulation text;
+alter table public.call_records add column if not exists lead_number text;
+alter table public.call_records add column if not exists campaign_id integer;
+alter table public.call_records add column if not exists manager_id uuid;
+alter table public.call_records add column if not exists supervisor_id uuid;
+alter table public.call_records add column if not exists synced_at timestamptz;
+
+-- Remove restrições antigas de status e garante valor padrão.
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'public.call_records'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) ilike '%human_review_status%' loop
+    execute format('alter table public.call_records drop constraint %I', c.conname);
+  end loop;
+end $$;
+alter table public.call_records alter column human_review_status set default 'pending';
+update public.call_records set human_review_status = 'pending' where human_review_status is null;
+
+-- Necessário para a importação idempotente (upsert por argus_call_id).
+create unique index if not exists call_records_argus_call_id_key on public.call_records(argus_call_id);
+create index if not exists call_records_started_idx on public.call_records(call_started_at desc);
+create index if not exists call_records_operator_idx on public.call_records(argus_user_id);
+
+-- ───────── Avaliações ─────────
+create table if not exists public.call_evaluations (
+  id uuid primary key default gen_random_uuid(),
+  call_record_id uuid not null unique references public.call_records(id) on delete cascade,
+  evaluator_id uuid references public.profiles(id) on delete set null,
+  score numeric(3,1) not null check (score between 0 and 10),
+  result text not null check (result in ('approved','attention','failed')),
+  criteria jsonb not null default '{}'::jsonb,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ───────── Segurança (RLS) ─────────
+alter table public.profiles enable row level security;
+alter table public.call_records enable row level security;
+alter table public.call_evaluations enable row level security;
+
+drop policy if exists profiles_select_self on public.profiles;
+create policy profiles_select_self on public.profiles
+  for select to authenticated using (id = auth.uid());
+
+drop policy if exists profiles_select_staff on public.profiles;
+create policy profiles_select_staff on public.profiles
+  for select to authenticated using (public.current_profile_role() in ('director','quality'));
+
+drop policy if exists operators_select_staff on public.operators;
+create policy operators_select_staff on public.operators
+  for select to authenticated using (public.current_profile_role() in ('director','quality'));
+
+drop policy if exists call_records_scoped_select on public.call_records;
+create policy call_records_scoped_select on public.call_records
+  for select to authenticated using (
+    public.current_profile_role() in ('director','quality')
+    or (public.current_profile_role() = 'manager' and manager_id = auth.uid())
+    or (public.current_profile_role() = 'supervisor' and supervisor_id = auth.uid())
+  );
+
+drop policy if exists call_evaluations_scoped_select on public.call_evaluations;
+create policy call_evaluations_scoped_select on public.call_evaluations
+  for select to authenticated using (
+    exists (select 1 from public.call_records c where c.id = call_evaluations.call_record_id)
+  );  -- o RLS de call_records já restringe quais ligações são visíveis
+
+drop trigger if exists call_evaluations_set_updated_at on public.call_evaluations;
+create trigger call_evaluations_set_updated_at before update on public.call_evaluations
+  for each row execute function public.set_updated_at();
+
+-- Gravações em profiles, call_records e call_evaluations só pelo servidor (service_role).
+
+-- ───────── Regras de monitoria (categorias, palavras-chave e ocorrências) ─────────
 -- SEVENPRO MONITORIA
 -- Regras configuráveis de monitoria e ocorrências identificadas.
 
@@ -241,31 +398,9 @@ join public.monitoring_categories c
 on conflict (category_id, rule_type, normalized_expression)
 do nothing;
 
-
--- Avaliações humanas da monitoria. Migração aditiva; não apaga dados existentes.
-create table if not exists public.monitoring_reviews (
-  id uuid primary key default gen_random_uuid(),
-  argus_call_id text not null,
-  campaign_id integer not null default 1,
-  call_started_at timestamptz,
-  operator_name text,
-  outcome text not null default 'pending'
-    check (outcome in ('approved','coaching','critical','pending')),
-  score integer check (score is null or (score >= 0 and score <= 100)),
-  criteria jsonb not null default '{}'::jsonb,
-  notes text,
-  reviewed_by uuid references auth.users(id) on delete set null,
-  reviewed_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (campaign_id, argus_call_id)
-);
-create index if not exists monitoring_reviews_operator_idx
-  on public.monitoring_reviews(operator_name, reviewed_at desc);
-create index if not exists monitoring_reviews_date_idx
-  on public.monitoring_reviews(call_started_at desc);
-alter table public.monitoring_reviews enable row level security;
-drop policy if exists monitoring_reviews_director_all on public.monitoring_reviews;
-create policy monitoring_reviews_director_all on public.monitoring_reviews
-for all to authenticated
-using (public.current_profile_role() = 'director')
-with check (public.current_profile_role() = 'director');
+-- ───────── Primeiro acesso ─────────
+-- 1) Crie seu usuário em Authentication > Users (e-mail + senha).
+-- 2) Copie o UUID dele e rode (troque UUID e nome):
+-- insert into public.profiles (id, display_name, role, active)
+-- values ('COLE-O-UUID-AQUI', 'Seu Nome', 'director', true)
+-- on conflict (id) do update set role = 'director', active = true;

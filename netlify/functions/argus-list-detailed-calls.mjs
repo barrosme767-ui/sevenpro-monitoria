@@ -1,41 +1,209 @@
+import { createClient } from '@supabase/supabase-js';
 
-import { json, authorizeDirector, argusPost } from './_shared.mjs';
-const validDate = v => typeof v === 'string' && !Number.isNaN(Date.parse(v));
-const getRows = d => d?.ligacoesDetalhadas ?? d?.ligacoes ?? d?.retornoLigacoesItens ?? d?.data?.ligacoesDetalhadas ?? d?.data?.ligacoes ?? [];
+const json = (statusCode, body) => ({
+  statusCode,
+  headers: {
+    'content-type': 'application/json',
+    'cache-control': 'no-store'
+  },
+  body: JSON.stringify(body)
+});
+
 export async function handler(event) {
-  if (event.httpMethod !== 'GET') return json(405, { error: 'Método não permitido.' }, { allow: 'GET' });
-  const auth = await authorizeDirector(event); if (auth.response) return auth.response;
-  const q = event.queryStringParameters || {};
-  const campaign = Number(q.idCampanha || process.env.ARGUS_CAMPAIGN_ID || 1);
-  const start = q.periodoInicial, end = q.periodoFinal;
-  if (!Number.isInteger(campaign) || campaign < 1) return json(400,{error:'idCampanha inválido.'});
-  if (!validDate(start) || !validDate(end) || new Date(end) <= new Date(start)) return json(400,{error:'Informe período inicial e final válidos.'});
-  if (new Date(end)-new Date(start) > 7*86400000) return json(400,{error:'Consulte no máximo 7 dias por vez.'});
-  const payload = { idCampanha: campaign, periodoInicial: start, periodoFinal: end };
-  for (const k of ['idGrupoUsuario','idLote','nrLead','idUsuario','idStatusLigacao','idTabulacao']) {
-    if (q[k] !== undefined && q[k] !== '') { const n=Number(q[k]); if(!Number.isInteger(n)||n<0)return json(400,{error:`Filtro ${k} inválido.`}); payload[k]=n; }
+  if (event.httpMethod !== 'GET') {
+    return json(405, { error: 'Método não permitido.' });
   }
+
+  const auth =
+    event.headers.authorization ||
+    event.headers.Authorization;
+
+  if (!auth?.startsWith('Bearer ')) {
+    return json(401, { error: 'Autenticação necessária.' });
+  }
+
+  const {
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
+    ARGUS_TOKEN_SIGNATURE,
+    ARGUS_API_URL
+  } = process.env;
+
+  if (
+    !SUPABASE_URL ||
+    !SUPABASE_SERVICE_ROLE_KEY ||
+    !ARGUS_TOKEN_SIGNATURE ||
+    !ARGUS_API_URL
+  ) {
+    return json(503, {
+      error: 'Integração não configurada no servidor.'
+    });
+  }
+
   try {
-    let all=[], pages=0, last=null, endOfTable=false;
-    while (pages < 20) {
-      const data = await argusPost('/report/ligacoesdetalhadas', payload);
-      const rows = getRows(data);
-      if (!Array.isArray(rows)) throw new Error('O relatório do Argus não trouxe uma lista de ligações reconhecida.');
-      all.push(...rows); pages++;
-      endOfTable = data.endOfTable === true || Number(data.idProxPagina || 0) === 0;
-      last = data.idProxPagina ?? null;
-      if (endOfTable || rows.length === 0 || !last) break;
-      payload.ultimoId = Number(last);
+    const supabase = createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } }
+    );
+
+    const {
+      data: { user },
+      error: authError
+    } = await supabase.auth.getUser(auth.slice(7));
+
+    if (authError || !user) {
+      return json(401, { error: 'Sessão inválida.' });
     }
-    const unique = new Map();
-    for (const row of all) {
-      const id = row.idLigacao ?? row.argus_call_id ?? `${row.dataHoraLigacao}|${row.usuarioOperador}|${row.nrLead}`;
-      unique.set(String(id), row);
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, active')
+      .eq('id', user.id)
+      .single();
+
+    if (
+      profileError ||
+      !profile?.active ||
+      profile.role !== 'director'
+    ) {
+      return json(403, {
+        error: 'Apenas a Diretoria pode consultar este relatório.'
+      });
     }
-    const calls = [...unique.values()];
-    return json(200, { success:true, data:calls, meta:{campaign, start, end, pages, count:calls.length, endOfTable, nextPage:last, capped:pages>=20&&!endOfTable} });
-  } catch (e) {
-    console.error('argus-list-detailed-calls:', e.message);
-    return json(e.name==='AbortError'?504:502,{error:e.message||'Falha ao consultar Argus.', detail:e.detail});
+
+    const params = event.queryStringParameters || {};
+    const idCampanha = Number(params.idCampanha);
+    const periodoInicial = params.periodoInicial;
+    const periodoFinal = params.periodoFinal;
+
+    if (!Number.isInteger(idCampanha) || idCampanha <= 0) {
+      return json(400, {
+        error: 'Informe um idCampanha válido.'
+      });
+    }
+
+    if (!periodoInicial || !periodoFinal) {
+      return json(400, {
+        error: 'Informe o período inicial e o período final.'
+      });
+    }
+
+    const inicio = new Date(periodoInicial);
+    const fim = new Date(periodoFinal);
+
+    if (
+      Number.isNaN(inicio.getTime()) ||
+      Number.isNaN(fim.getTime()) ||
+      fim <= inicio
+    ) {
+      return json(400, {
+        error: 'O período informado é inválido.'
+      });
+    }
+
+    const intervalo = fim.getTime() - inicio.getTime();
+    const seteDias = 7 * 24 * 60 * 60 * 1000;
+
+    if (intervalo > seteDias) {
+      return json(400, {
+        error: 'O período máximo por consulta é de sete dias.'
+      });
+    }
+
+    const payload = {
+      idCampanha,
+      periodoInicial,
+      periodoFinal
+    };
+
+    const numericFilters = [
+      'idLigacao',
+      'idGrupoUsuario',
+      'idLote',
+      'nrLead',
+      'idUsuario',
+      'idStatusLigacao',
+      'idTabulacao',
+      'ultimoId'
+    ];
+
+    for (const key of numericFilters) {
+      if (params[key] !== undefined && params[key] !== '') {
+        const value = Number(params[key]);
+
+        if (!Number.isInteger(value) || value < 0) {
+          return json(400, {
+            error: `O filtro ${key} precisa ser um inteiro válido.`
+          });
+        }
+
+        payload[key] = value;
+      }
+    }
+
+    if (params.dddTelefone) {
+      payload.dddTelefone = params.dddTelefone.slice(0, 30);
+    }
+
+    if (params.somenteInsucesso !== undefined) {
+      payload.somenteInsucesso =
+        params.somenteInsucesso === 'true';
+    }
+
+    const baseUrl = ARGUS_API_URL.replace(/\/+$/, '');
+
+    const upstream = await fetch(
+      `${baseUrl}/report/ligacoesdetalhadas`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Token-Signature': ARGUS_TOKEN_SIGNATURE
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const responseText = await upstream.text();
+
+    if (!upstream.ok) {
+      console.error(
+        'Erro no relatório detalhado do Argus:',
+        upstream.status
+      );
+
+      return json(502, {
+        error: 'O Argus recusou a consulta do relatório.',
+        upstreamStatus: upstream.status
+      });
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      return json(502, {
+        error: 'O Argus retornou uma resposta que não é JSON.'
+      });
+    }
+
+    if (data.codStatus !== undefined && Number(data.codStatus) < 1) {
+      return json(502, {
+        error: data.descStatus || 'O Argus não conseguiu gerar o relatório.'
+      });
+    }
+
+    return json(200, { data });
+  } catch (error) {
+    console.error(
+      'Falha no relatório detalhado:',
+      error?.message || 'Erro desconhecido'
+    );
+
+    return json(500, {
+      error: 'Erro interno ao consultar o relatório do Argus.'
+    });
   }
 }
