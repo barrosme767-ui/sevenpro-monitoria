@@ -1,24 +1,25 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase } from './supabase';
-import React,{useState,useEffect,useMemo, useCallback} from 'react';
-import {createRoot} from 'react-dom/client';
-import {supabase} from './supabase';
+
 import './styles.css';
 import './app.css';
+
 import { PageTitle, EmptyState } from './components.jsx';
 import Overview from './pages/Overview.jsx';
 import Calls from './pages/Calls.jsx';
 import Operators from './pages/Operators.jsx';
 import UserManagement from './pages/Users.jsx';
 import { ROLE_LABELS } from './lib/format';
+
 import {
   ChevronDown, ShieldCheck, Settings, CircleHelp, Menu, Bell, LogOut,
   CircleAlert, LockKeyhole, LayoutDashboard, PhoneCall, Users, TriangleAlert,
   FileBarChart, Search, RefreshCw, Wifi, WifiOff, X, Clock, CheckCircle2,
   AlertTriangle, Headphones, UserCog, Eye, EyeOff
 } from 'lucide-react';
-
+import {
 const nav = [
   { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
   { id: 'calls', label: 'Chamadas', icon: PhoneCall },
